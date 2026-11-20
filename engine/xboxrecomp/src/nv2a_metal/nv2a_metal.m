@@ -1629,6 +1629,16 @@ static void bind_stage(const uint32_t *regs, int i, float scale[2], __strong id<
         if (an > 1) key |= (uint32_t)an << 20;
     }
     *smp_out = sampler_get(key);
+    {   /* hp1-xbox-port: RECOMP_STAGE_TRACE=<frame>: every stage bind of that frame. */
+        static int tf = -2;
+        if (tf == -2) { const char *e = getenv("RECOMP_STAGE_TRACE"); tf = e ? atoi(e) : -1; }
+        if (tf >= 0 && (int)s_frame == tf)
+            fprintf(stderr, "[stage] f%u s%d va %08X fmt %02X %ux%u pitch %u lv %u rt %d tex %lux%lu fmt %lu"
+                            " addr %08X filt %08X ctl0 %08X pal %08X\n", s_frame, i, va, color, w, h, pitch,
+                    (format >> 16) & 0xF, rt != NULL, (unsigned long)(*tex_out).width,
+                    (unsigned long)(*tex_out).height, (unsigned long)(*tex_out).pixelFormat,
+                    addr, filter, control0, s_palette_va);
+    }
 }
 
 /* NFSU2_TEXFLIP=1 (diagnostic, owner 2026-11-09 "текстури стрибають"): per mesh (vertex
@@ -3211,6 +3221,32 @@ static void mtl_draw_raw_inner(const Nv2aRawBatch *b)
         return;
     VT("draw: prim %u idx %u verts %u attrs %04X direct %04X xform %u surf %08X zeta %08X\n", b->prim, n,
        b->vertex_count, b->attr_present, b->attr_direct, b->xform, b->surface.color_va, b->zeta_va);
+    {   /* hp1-xbox-port: RECOMP_MTL_SKIP="a-b" drops the frame's draws a..b (bisect a wrong
+         * draw); RECOMP_DRAW_LOG=<frame> lists that frame's draws (index, attributes, stages). */
+        static int sk = -2, dl = -2;
+        static uint32_t sa, sb, fidx, fframe;
+        if (sk == -2) {
+            const char *e = getenv("RECOMP_MTL_SKIP");
+            sk = e && sscanf(e, "%u-%u", &sa, &sb) == 2;
+            e = getenv("RECOMP_DRAW_LOG");
+            dl = e ? atoi(e) : -1;
+        }
+        if (fframe != s_frame) { fframe = s_frame; fidx = 0; }
+        fidx++;
+        if (dl >= 0 && (int)s_frame == dl) {
+            uint32_t k;
+            fprintf(stderr, "[dl] f%u #%u prim %u n %u attrs %04X xform %u comb %08X %08X",
+                    s_frame, fidx, b->prim, n, b->attr_present, b->xform, r[0x1E60 / 4], r[0x1E70 / 4]);
+            for (k = 0; k < 4; k++) {
+                uint32_t base = (0x1B00u + k * 0x40u) / 4;
+                if (r[base + 3] & 0x40000000u)
+                    fprintf(stderr, " | s%u %08X f%02X", k, b->tex_va[k], (r[base + 1] >> 8) & 0xFF);
+            }
+            fprintf(stderr, " | light %u spec %u\n", r[0x314 / 4], r[0x3B8 / 4]);
+        }
+        if (sk && fidx >= sa && fidx <= sb)
+            return;
+    }
     s = target(&b->surface, b->zeta_va, &d);
     if (!s)
         return;

@@ -1763,6 +1763,18 @@ static int lit_color(uint32_t index, float out[4])
     }
 
     out[0] = reg_f(0x0A10); out[1] = reg_f(0x0A14); out[2] = reg_f(0x0A18);
+    /* hp1-xbox-port: COLOR_MATERIAL bits 0-1, the emission's source: 1 the
+     * vertex diffuse, 2 the vertex specular (D3DMCS_COLOR1/COLOR2). Pre-lit
+     * meshes (HP1's rooms: lighting on, no lights, emission from the vertex
+     * colour) were black without it. */
+    if ((colmat & 3) == 1 && have_vc) {
+        out[0] += vc[0]; out[1] += vc[1]; out[2] += vc[2];
+    } else if ((colmat & 3) == 2 && s_gpu.attr[4].size && s_gpu.attr[4].stride) {
+        float sc[4];
+        if (fetch_attr(&s_gpu.attr[4], index, sc)) {
+            out[0] += sc[0]; out[1] += sc[1]; out[2] += sc[2];
+        }
+    }
     for (i = 0; i < NV_LIGHTS; i++) {
         uint32_t kind = (mask >> (2 * i)) & 3, b = 0x1000 + (uint32_t)i * 0x80;
         float l[3], att = 1.0f, ndl, amb[3], dif[3];
@@ -3298,6 +3310,64 @@ static void raw_batch(void)
                 if (!(present & (1u << a)) || !fetch_attr(&s_gpu.attr[a], lo + i, o))
                     memcpy(o, s_gpu.attr_const[a], sizeof s_gpu.attr_const[a]);
             }
+        }
+    }
+    /* hp1-xbox-port: fixed-function lighting for the GPU back ends. With
+     * SET_LIGHTING_ENABLE the combiners' diffuse is the lit colour, not the
+     * vertex's colour stream; the Metal path had no lighting at all, so lit
+     * meshes took a white diffuse and HP1's light walls (texture x diffuse x 2)
+     * burnt out to pure white. lit_color (the CPU renderer's lighting) fills
+     * attribute 3 per vertex instead. RECOMP_FF_LIGHT=0 turns it off. */
+    {
+        static int ff_light = -1;
+        if (ff_light < 0) {
+            const char *e = getenv("RECOMP_FF_LIGHT");
+            ff_light = !(e && *e == '0');
+        }
+        if (ff_light && s_reg[0x0314 / 4] && batch_is_ffp() && !batch_is_vp() && s_gpu.attr[2].size
+                && NV2A_RAW_ATTRS > 3) {
+            for (i = 0; i < nv; i++) {
+                float *o = s_raw_attrs + ((size_t)i * NV2A_RAW_ATTRS + 3) * 4;
+                if (!lit_color(lo + i, o)) {
+                    o[0] = o[1] = o[2] = o[3] = 1.0f;
+                }
+            }
+            {   /* RECOMP_LIGHT_TRACE=1: each new light setup once, with a sample vertex */
+                static int lt = -1;
+                static uint64_t seen[256];
+                static int nseen;
+                if (lt < 0) lt = getenv("RECOMP_LIGHT_TRACE") != NULL;
+                if (lt) {
+                    uint64_t h = 1469598103934665603ull;
+                    uint32_t k, r;
+                    for (k = 0x1000; k < 0x1400; k += 4) h = (h ^ s_reg[k / 4]) * 1099511628211ull;
+                    for (k = 0x0A10; k < 0x0A1C; k += 4) h = (h ^ s_reg[k / 4]) * 1099511628211ull;
+                    h = (h ^ s_reg[0x03BC / 4]) * 1099511628211ull;
+                    h = (h ^ s_reg[0x0298 / 4]) * 1099511628211ull;
+                    for (k = 0; k < (uint32_t)nseen && seen[k] != h; k++) { }
+                    if (k == (uint32_t)nseen && nseen < 256) {
+                        float nrm[4] = {0}, *o = s_raw_attrs + 3 * 4;
+                        seen[nseen++] = h;
+                        fetch_attr(&s_gpu.attr[2], lo, nrm);
+                        fprintf(stderr, "[light] mask %08X colmat %08X amb %.3f %.3f %.3f matA %.3f normal type %u (%.2f %.2f %.2f) -> lit %.3f %.3f %.3f %.3f\n",
+                                s_reg[0x03BC / 4], s_reg[0x0298 / 4], reg_f(0x0A10), reg_f(0x0A14), reg_f(0x0A18), reg_f(0x03B4),
+                                s_gpu.attr[2].type, nrm[0], nrm[1], nrm[2], o[0], o[1], o[2], o[3]);
+                        for (k = 0; k < 8; k++) {
+                            uint32_t kind = (s_reg[0x03BC / 4] >> (2 * k)) & 3, b = 0x1000 + k * 0x80;
+                            if (!kind) continue;
+                            fprintf(stderr, "[light]   L%u kind %u amb %.3f %.3f %.3f dif %.3f %.3f %.3f",
+                                    k, kind, reg_f(b), reg_f(b + 4), reg_f(b + 8), reg_f(b + 0xC), reg_f(b + 0x10), reg_f(b + 0x14));
+                            if (kind == 1) fprintf(stderr, " dir %.2f %.2f %.2f\n", reg_f(b + 0x34), reg_f(b + 0x38), reg_f(b + 0x3C));
+                            else fprintf(stderr, " pos %.1f %.1f %.1f range %.1f att %.3f %.4f %.6f\n", reg_f(b + 0x5C), reg_f(b + 0x60),
+                                         reg_f(b + 0x64), reg_f(b + 0x24), reg_f(b + 0x68), reg_f(b + 0x6C), reg_f(b + 0x70));
+                            (void)r;
+                        }
+                    }
+                }
+            }
+            present |= (uint16_t)(1u << 3);
+            direct &= (uint16_t)~(1u << 3);
+            rb.attr_direct = direct;
         }
     }
     for (i = 0; i < s_gpu.idx_count; i++)
