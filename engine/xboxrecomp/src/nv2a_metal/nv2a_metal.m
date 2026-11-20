@@ -1555,6 +1555,7 @@ static void rt_scale(uint32_t w, uint32_t h, uint32_t sw, uint32_t sh,
 
 /* Stage i: its texture (a surface or a cached texture), sampler and
  * texcoord scale. Records uploads, so call it before the pass begins. */
+volatile int nv2a_mtl_capture;   /* hp1-xbox-port: F12 capture (apple_main.c): 2 = arm, 1 = log this frame */
 static uint32_t s_nomip_draws, s_onelvl_draws, s_stage_draws;   /* stage binds at the title's no-mip level 0 (NFSU2_TEXFLIP log) */
 static void bind_stage(const uint32_t *regs, int i, float scale[2], __strong id<MTLTexture> *tex_out,
                        __strong id<MTLSamplerState> *smp_out, MtSurf **sampled)
@@ -3238,17 +3239,22 @@ static void mtl_draw_raw_inner(const Nv2aRawBatch *b)
        b->vertex_count, b->attr_present, b->attr_direct, b->xform, b->surface.color_va, b->zeta_va);
     {   /* hp1-xbox-port: RECOMP_MTL_SKIP="a-b" drops the frame's draws a..b (bisect a wrong
          * draw); RECOMP_DRAW_LOG=<frame> lists that frame's draws (index, attributes, stages). */
-        static int sk = -2, dl = -2;
+        static int sk = -2, dl = -2, dl_n = 1;
         static uint32_t sa, sb, fidx, fframe;
         if (sk == -2) {
             const char *e = getenv("RECOMP_MTL_SKIP");
             sk = e && sscanf(e, "%u-%u", &sa, &sb) == 2;
             e = getenv("RECOMP_DRAW_LOG");
             dl = e ? atoi(e) : -1;
+            if (e && strchr(e, ',')) dl_n = atoi(strchr(e, ',') + 1);
         }
-        if (fframe != s_frame) { fframe = s_frame; fidx = 0; }
+        if (fframe != s_frame) {
+            fframe = s_frame; fidx = 0;
+            if (nv2a_mtl_capture > 0 && --nv2a_mtl_capture == 0)
+                fprintf(stderr, "[capture] done\n");
+        }
         fidx++;
-        if (dl >= 0 && (int)s_frame == dl) {
+        if ((dl >= 0 && (int)s_frame >= dl && (int)s_frame < dl + dl_n) || nv2a_mtl_capture == 1) {
             uint32_t k;
             fprintf(stderr, "[dl] f%u #%u prim %u n %u attrs %04X xform %u comb %08X %08X",
                     s_frame, fidx, b->prim, n, b->attr_present, b->xform, r[0x1E60 / 4], r[0x1E70 / 4]);

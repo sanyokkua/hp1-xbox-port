@@ -478,6 +478,16 @@ int main(int argc, char **argv)
             continue;
         if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F11 && !e.key.repeat && s_win)
             set_full(s_win, !s_full);
+        if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F12 && !e.key.repeat) {
+            /* hp1-xbox-port: F12 debug capture -- the main guest thread's stack and the next
+             * frame's draws into the log (for "this screen is wrong" reports). */
+            extern void xbox_WatchdogDump(const char *why);
+            extern volatile int nv2a_mtl_capture;
+            xbox_WatchdogDump("F12 capture");
+            nv2a_mtl_capture = 2;
+            fprintf(stderr, "[capture] F12: next frame's draws follow as [dl] lines\n");
+            continue;
+        }
         if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F && !e.key.repeat &&
             (e.key.keysym.mod & KMOD_GUI) && (e.key.keysym.mod & KMOD_ALT)) {
             extern volatile int nv2a_mtl_fps_overlay;   /* owner 2026-11-09: Cmd+Option+F */
