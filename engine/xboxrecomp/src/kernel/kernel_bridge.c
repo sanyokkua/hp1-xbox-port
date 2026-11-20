@@ -2898,7 +2898,16 @@ static int kernel_raise_interrupt(uint32_t vector)
 #define VBLANK_PERIOD_60_US 16683                 /* 59.94 Hz */
 /* RECOMP_VBLANK_HZ=120: a 119.88 Hz vblank (Mac 120 fps option; the title's
  * flip intervals are doubled where its pacing must stay, recomp_manual.c). */
+/* hp1-xbox-port: fast-forward (HP1's Skip Cutscenes): the vblank runs this many
+ * times faster while it is above 1, and so does a title that counts frames. */
+volatile int xbox_vblank_turbo = 1;
+static long long vblank_period_base_us(void);
 static long long vblank_period_us(void)
+{
+    int t = xbox_vblank_turbo;
+    return t > 1 ? vblank_period_base_us() / t : vblank_period_base_us();
+}
+static long long vblank_period_base_us(void)
 {
     static long long p;
     if (!p) {

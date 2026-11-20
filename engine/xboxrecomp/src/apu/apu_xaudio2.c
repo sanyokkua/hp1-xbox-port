@@ -27,9 +27,18 @@ void apu_output_safety(const int16_t *in, int16_t *out, int n)
         out[i] = (int16_t)(ceiling * tanhf((float)in[i] * g_xa2_volume / ceiling));
 }
 
+/* hp1-xbox-port: the fast-forward mutes on top of the player's volume. */
+volatile int xa2_mute;
+static float g_xa2_user_volume = 0.5f;   /* as g_xa2_volume starts */
 void xa2_set_master_volume(float v)
 {
-    g_xa2_volume = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+    g_xa2_user_volume = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+    g_xa2_volume = xa2_mute ? 0.0f : g_xa2_user_volume;
+}
+void xa2_set_mute(int on)
+{
+    xa2_mute = on;
+    g_xa2_volume = on ? 0.0f : g_xa2_user_volume;
 }
 
 /* The XAudio2 backend is Windows-only; on other hosts the same xa2_* calls

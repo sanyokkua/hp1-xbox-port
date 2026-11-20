@@ -263,6 +263,7 @@ typedef struct {
     uint32_t used;
     uint32_t aa_sx, aa_sy;
     uint32_t gen;              /* bumped by every draw and clear into it */
+    uint32_t sig;              /* hp1-xbox-port: guest bytes under it when last a target (surf_sig) */
 } MtSurf;
 
 typedef struct {
@@ -746,9 +747,24 @@ static MtSurf *surf_get(uint32_t va, uint32_t w, uint32_t h, uint32_t aa_sx, uin
 
     /* h is the surface clip, not the allocation (nv2a_vk.c): keep the
      * surface while the clip fits, grow it when it does not. */
-    if (s && s->w == w && s->h >= h) {
+    __strong id<MTLTexture> old = nil;
+    uint32_t old_pw = 0, old_ph = 0;
+    if (s && s->w >= w && s->h >= h) {         /* a narrower clip fits too (HP1's UI draws) */
         s->used = s_frame;
         return s;
+    }
+    /* hp1-xbox-port: a draw with a bigger clip (or another width) on a surface
+     * that exists: grow it to cover both and keep its pixels. It was made anew
+     * and cleared: HP1's message boxes drew the whole frame, then the A button
+     * with a taller clip, and only the A was left on screen. */
+    if (s) {
+        static int told;
+        if (told++ < 20)
+            fprintf(stderr, "[surf] 0x%08X %ux%u -> %ux%u: grown, pixels kept\n", va, s->w, s->h,
+                    w > s->w ? w : s->w, h > s->h ? h : s->h);
+        if (w < s->w) w = s->w;
+        if (h < s->h) h = s->h;
+        old = s->tex; old_pw = s->pw; old_ph = s->ph;
     }
     if (!s) {
         for (i = 0; i < MTL_MAX_SURF; i++) {
@@ -779,6 +795,12 @@ static MtSurf *surf_get(uint32_t va, uint32_t w, uint32_t h, uint32_t aa_sx, uin
         return NULL;
     }
     clear_texture(s->tex, 0);
+    if (old) {
+        uint32_t cw = old_pw < s->pw ? old_pw : s->pw, ch = old_ph < s->ph ? old_ph : s->ph;
+        [blit() copyFromTexture:old sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
+                     sourceSize:MTLSizeMake(cw, ch, 1) toTexture:s->tex destinationSlice:0
+               destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
+    }
     if (s_trace)
         LOGE("surface 0x%08X %ux%u (aa %ux%u, stored %ux%u)\n", va, w, h, aa_sx, aa_sy,
              s->pw, s->ph);
@@ -817,6 +839,25 @@ static MtDepth *depth_get(uint32_t va, uint32_t pw, uint32_t ph)
 
 /* The target of a draw or clear: surface (created on first use) and the
  * depth buffer of its zeta address. */
+/* hp1-xbox-port: a sample of the guest memory under a surface. The GPU's
+ * pixels live only here, so the guest bytes stay whatever they were while
+ * the surface is drawn into; when they change and the surface is no longer
+ * drawn into, the title has freed it and put something else there (HP1's
+ * Remembrall: its menu textures loaded where a render target had been, and
+ * every one of them sampled the old surface: no clouds, rings or labels). */
+static uint32_t surf_sig(const MtSurf *s)
+{
+    const uint8_t *mem = (const uint8_t *)xbox_GetMemoryOffset();
+    uint32_t bytes = s->w * s->h * 4, h = 2166136261u, k, v;
+    if (s->va >= 0x80000000u && bytes > 0x84000000u - s->va)   /* stay inside the 64 MB window */
+        bytes = 0x84000000u - s->va - 4;
+    for (k = 0; k < 64; k++) {
+        memcpy(&v, mem + s->va + (uint64_t)bytes * k / 64, 4);
+        h = (h ^ v) * 16777619u;
+    }
+    return h;
+}
+
 static MtSurf *target(const Nv2aSurface *sf, uint32_t zeta_va, MtDepth **dout)
 {
     uint32_t bpp = sf->bytes_per_pixel ? sf->bytes_per_pixel : 4;
@@ -831,8 +872,10 @@ static MtSurf *target(const Nv2aSurface *sf, uint32_t zeta_va, MtDepth **dout)
     s = surf_get(sf->color_va, w, h, sf->aa_sx ? sf->aa_sx : 1, sf->aa_sy ? sf->aa_sy : 1);
     if (s && zeta_va)
         *dout = depth_get(zeta_va, s->pw, s->ph);
-    if (s)
+    if (s) {
         s_last = s;
+        s->sig = surf_sig(s);
+    }
     return s;
 }
 
@@ -1101,6 +1144,42 @@ static void tex_fill(MtTex *t, uint32_t va, uint32_t layer)
                 s_decode[k] = 0xFFFF00FFu;
             if (s_trace)
                 LOGE("texture 0x%08X format 0x%02X not decodable\n", va, color);
+        }
+    }
+    {   /* hp1-xbox-port: RECOMP_TEX_DUMP=<dir>[,va,va...]: decoded textures (all, or the listed) as BMP */
+        static int on = -1; static char dir[512]; static uint32_t list[16]; static int nl;
+        if (on < 0) {
+            const char *e = getenv("RECOMP_TEX_DUMP"), *c;
+            on = e && *e;
+            if (on) {
+                snprintf(dir, sizeof dir, "%s", e);
+                if ((c = strchr(e, ','))) {
+                    dir[c - e] = 0;
+                    while (c && nl < 16) { list[nl++] = (uint32_t)strtoul(c + 1, NULL, 16); c = strchr(c + 1, ','); }
+                }
+            }
+        }
+        if (on) {
+            int k, want = !nl;
+            for (k = 0; k < nl; k++) want |= list[k] == va;
+            if (want) {
+                char fn[600]; FILE *f; uint32_t y, hdr[13];
+                const uint8_t *m8 = (const uint8_t *)xbox_GetMemoryOffset();
+                uint32_t p0 = 0, p1 = 0;
+                if (color == 0x0B && s_palette_va) { memcpy(&p0, m8 + s_palette_va, 4); memcpy(&p1, m8 + s_palette_va + 4, 4); }
+                fprintf(stderr, "[texdump] %08X fmt %02X %ux%u pitch %u pal reg %08X va %08X [0]=%08X [1]=%08X px0 %08X\n",
+                        va, color, w, h, pitch, s_palette_reg, s_palette_va, p0, p1, s_decode[0]);
+                snprintf(fn, sizeof fn, "%s/t%08X_%02X_%ux%u_f%u.bmp", dir, va, color, w, h, s_frame);
+                if ((f = fopen(fn, "wb"))) {
+                    memset(hdr, 0, sizeof hdr);
+                    fputc('B', f); fputc('M', f);
+                    hdr[0] = 54 + w * h * 4; hdr[2] = 54; hdr[3] = 40; hdr[4] = w; hdr[5] = (uint32_t)-(int32_t)h;
+                    hdr[6] = 1 | (32 << 16);
+                    fwrite(hdr, 4, 13, f);
+                    for (y = 0; y < h; y++) fwrite(s_decode + (size_t)y * w, 4, w, f);
+                    fclose(f);
+                }
+            }
         }
     }
     tex_upload(t, s_decode, w * h * 4, w * 4, h, layer);
@@ -1555,7 +1634,9 @@ static void rt_scale(uint32_t w, uint32_t h, uint32_t sw, uint32_t sh,
 
 /* Stage i: its texture (a surface or a cached texture), sampler and
  * texcoord scale. Records uploads, so call it before the pass begins. */
-volatile int nv2a_mtl_capture;   /* hp1-xbox-port: F12 capture (apple_main.c): 2 = arm, 1 = log this frame */
+volatile int nv2a_mtl_capture;   /* hp1-xbox-port: F12 capture (apple_main.c): frames + 1 = arm, 1..frames = log */
+volatile int nv2a_mtl_capture_frames = 1;
+static int capturing(void) { return nv2a_mtl_capture >= 1 && nv2a_mtl_capture <= nv2a_mtl_capture_frames; }
 static uint32_t s_nomip_draws, s_onelvl_draws, s_stage_draws;   /* stage binds at the title's no-mip level 0 (NFSU2_TEXFLIP log) */
 static void bind_stage(const uint32_t *regs, int i, float scale[2], __strong id<MTLTexture> *tex_out,
                        __strong id<MTLSamplerState> *smp_out, MtSurf **sampled)
@@ -1596,6 +1677,19 @@ static void bind_stage(const uint32_t *regs, int i, float scale[2], __strong id<
     s_palette_reg = regs[base + 8];
     s_palette_va = s_batch->pal_va[i];
     rt = cube ? NULL : surf_find(va);
+    /* A palettized or DXT image is never a render target: a surface at its
+     * address is one the title freed (HP1's menus and message boxes). */
+    if (rt && ((color == 0x0B || (color >= 0x0C && color <= 0x0F)) ||
+               (rt->used + 1 < s_frame && surf_sig(rt) != rt->sig))) {
+        static int told;
+        if (told++ < 40)
+            fprintf(stderr, "[surf] 0x%08X %ux%u sampled as format %02X %ux%u: stale (a target last in frame %u), dropped\n",
+                    rt->va, rt->w, rt->h, color, w, h, rt->used);
+        if (s_rt == rt) end_pass();
+        if (s_last == rt) s_last = NULL;
+        surf_reset(rt);
+        rt = NULL;
+    }
     if (cube) {
         if (cube_on && nv2a_vk_cube_maps && (format & 4)) {
             uint32_t face = cube_face_bytes(color, w, h, (format >> 16) & 0xF), f;
@@ -3195,6 +3289,8 @@ static int pend_append(const Nv2aRawBatch *b, int changed)
 
 /* ── Back end entry points ────────────────────────────────────────── */
 
+extern volatile int nv2a_mtl_turbo;
+#define TURBO_SKIP() (nv2a_mtl_turbo && (s_frame % 8u) != 0u)   /* fast-forward: draw 1 frame in 8 */
 static void mtl_draw_raw_inner(const Nv2aRawBatch *b)
 {
     MtSurf *s, *sampled[4];
@@ -3215,7 +3311,7 @@ static void mtl_draw_raw_inner(const Nv2aRawBatch *b)
     size_t iat, cat;
     MTLIndexType itype;
 
-    if (!ready())
+    if (!ready() || TURBO_SKIP())
         return;
     s_regs = r;
     s_batch = b;
@@ -3254,7 +3350,7 @@ static void mtl_draw_raw_inner(const Nv2aRawBatch *b)
                 fprintf(stderr, "[capture] done\n");
         }
         fidx++;
-        if ((dl >= 0 && (int)s_frame >= dl && (int)s_frame < dl + dl_n) || nv2a_mtl_capture == 1) {
+        if ((dl >= 0 && (int)s_frame >= dl && (int)s_frame < dl + dl_n) || capturing()) {
             uint32_t k;
             fprintf(stderr, "[dl] f%u #%u prim %u n %u attrs %04X xform %u comb %08X %08X",
                     s_frame, fidx, b->prim, n, b->attr_present, b->xform, r[0x1E60 / 4], r[0x1E70 / 4]);
@@ -3290,6 +3386,25 @@ static void mtl_draw_raw_inner(const Nv2aRawBatch *b)
                     memcpy(v, b->attr_const[k], sizeof v);
                 fprintf(stderr, " | a%u %.3g %.3g %.3g %.3g", k, v[0], v[1], v[2], v[3]);
             }
+            fprintf(stderr, " | z %u %u %X", r[0x30C / 4], r[0x35C / 4], r[0x354 / 4]);
+            if (getenv("RECOMP_DL_ALLVERTS") && b->vertex_count > 6 && !(r[(0x1B00 + 0x0C) / 4] & 0x40000000u)) {
+                for (k = 0; k < b->vertex_count; k++) {
+                    float q[4] = { 0, 0, 0, 0 };
+                    if ((b->attr_direct & 1) && b->direct[0].type == 2)
+                        memcpy(q, b->direct[0].ptr + k * b->direct[0].stride, 12);
+                    else if (b->attrs)
+                        memcpy(q, b->attrs + k * 64, 12);
+                    fprintf(stderr, " v%u %.4g,%.4g,%.4g", k, q[0], q[1], q[2]);
+                }
+            } else
+            if (b->vertex_count <= 6 && !(b->attr_direct & 1) && b->attrs)
+                for (k = 1; k < b->vertex_count; k++)
+                    fprintf(stderr, " v%u %.4g,%.4g,%.4g", k, b->attrs[k * 64], b->attrs[k * 64 + 1], b->attrs[k * 64 + 2]);
+            else if (b->vertex_count <= 6 && (b->attr_direct & 1) && b->direct[0].type == 2)
+                for (k = 1; k < b->vertex_count; k++) {
+                    float q[3]; memcpy(q, b->direct[0].ptr + k * b->direct[0].stride, 12);
+                    fprintf(stderr, " v%u %.4g,%.4g,%.4g", k, q[0], q[1], q[2]);
+                }
             fputc('\n', stderr);
         }
         if (sk && fidx >= sa && fidx <= sb)
@@ -3505,8 +3620,10 @@ static void mtl_clear(const Nv2aSurface *sf, const Nv2aRenderState *rs,
         int color, dz;
         float c[4], z = 1.0f;
 
-        if (!ready())
+        if (!ready() || TURBO_SKIP())
             return;
+        if (capturing())
+            fprintf(stderr, "[clr] f%u rt %08X flags %X argb %08X\n", s_frame, sf->color_va, flags, argb);
         pend_flush();
         s = target(sf, rs ? rs->zeta_va : 0, &d);
         if (!s)
@@ -3851,6 +3968,9 @@ static void present(MtSurf *s)
         [s_cb presentDrawable:drawable];
 }
 
+/* hp1-xbox-port: fast-forward (HP1's Skip Cutscenes, recomp_manual.c): no frame
+ * cap and one frame in 8 presented, so the title runs as fast as it renders. */
+volatile int nv2a_mtl_turbo;
 static void mtl_flip_inner(void)
 {
     static int dump_every = -1;
@@ -3860,7 +3980,8 @@ static void mtl_flip_inner(void)
 
     if (!ready())
         return;
-    xbox_apple_limit_frame();
+    if (!nv2a_mtl_turbo)
+        xbox_apple_limit_frame();
     pend_flush();
     s_frame++;
     s_pd_n = 0;
@@ -4026,8 +4147,8 @@ static void mtl_flip_inner(void)
     }
     VT("flip %u: surface %08X drew %d\n", s_frame, s ? s->va : 0, s_drew_any);
     s_end_depth_dc = 1;
-    if (!s_headless)
-        present(s);
+    if (!s_headless && (!nv2a_mtl_turbo || s_frame % 8 == 1))
+        present(s);                 /* fast-forward: the one frame in 8 drawn is shown */
     post_frame(s);
     end_pass();
     end_blit();

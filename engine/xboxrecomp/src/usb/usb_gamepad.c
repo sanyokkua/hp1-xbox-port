@@ -302,7 +302,7 @@ static uint8_t synthetic_buttons(void)
  * (digital) and a b x y black white lt rt (analog, pressed fully).
  * Up to 64 steps. RECOMP_PAD2_SCRIPT drives the second pad the same way
  * (and keeps it plugged in), with times from the first pad's first read. */
-#define PAD_SCRIPT_MAX 64
+#define PAD_SCRIPT_MAX 512
 typedef struct { unsigned at, hold; uint8_t digital; uint8_t analog; } PadStep;
 static PadStep s_script_steps[USB_GAMEPADS][PAD_SCRIPT_MAX];
 static int s_script_count[USB_GAMEPADS] = { -1, -1 };

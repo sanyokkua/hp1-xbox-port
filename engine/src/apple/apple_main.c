@@ -482,9 +482,9 @@ int main(int argc, char **argv)
             /* hp1-xbox-port: F12 debug capture -- the main guest thread's stack and the next
              * frame's draws into the log (for "this screen is wrong" reports). */
             extern void xbox_WatchdogDump(const char *why);
-            extern volatile int nv2a_mtl_capture;
+            extern volatile int nv2a_mtl_capture, nv2a_mtl_capture_frames;
             xbox_WatchdogDump("F12 capture");
-            nv2a_mtl_capture = 2;
+            nv2a_mtl_capture = nv2a_mtl_capture_frames + 1;
             fprintf(stderr, "[capture] F12: next frame's draws follow as [dl] lines\n");
             continue;
         }

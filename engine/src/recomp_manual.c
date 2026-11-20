@@ -606,6 +606,75 @@ void sub_001F5064(void)
     esp += 4 + 8;
 }
 
+/* ── Skip Cutscenes (overlay Tweaks, HP1_SKIP_CUTSCENES=1) ───────────────
+ * The game has no skip: its story scenes are level scripts. While one plays the
+ * letterbox is up: [0x32E224] is 2 (bars coming in) or 1 (in), set by the
+ * script command setletterbox (0x4CAD0 -> 0x2A5A0 on, 0x2A5F0 off: 3, then 0).
+ * Game time is frames counted ([0x3565C4] / [0x21B7D8], sub_00140F50), so the
+ * scene is fast-forwarded: the vblank runs 8x faster (xbox_vblank_turbo; 16x starved the game: 960 interrupts a second), the
+ * renderer drops its frame cap and draws and shows one frame in 8 (nv2a_mtl_turbo), the
+ * sound is muted, and a line of speech that plays is stopped with the game's
+ * own stop (0x4F5F0: frees the stream and sound, state [0x331798] to 0), as
+ * scenes wait for their lines. Checked once a frame from the pad read. */
+#define HP1_LETTERBOX     0x0032E224u
+#define HP1_SPEECH_STATE  0x00331798u
+extern volatile int xbox_vblank_turbo, nv2a_mtl_turbo;
+extern void xa2_set_mute(int on);
+static void stop_speech(void)
+{
+    uint32_t sa = eax, sc = ecx, sd = edx, sb = ebx, ss = esi, sdi = edi, ssp = esp;
+    PUSH32(esp, 0x0004F5F0u); RECOMP_ABI_CALL(0x0004F5F0u, sub_0004F5F0);
+    eax = sa; ecx = sc; edx = sd; ebx = sb; esi = ss; edi = sdi; esp = ssp;
+}
+/* The game's own cutscene skip (sub_000D1550, called by the cut update
+ * sub_000D4660 while a cut, a cut/hpmNN.hog sub-level, plays): with either of
+ * two pad actions held ([0x356C04], [0x356C34] in the action table) and the
+ * cut allowed by [0x329DB4 + cut id] (only cuts already seen), it sets
+ * [0x33FF34] and the cut ends at its next update (sub_000D42F0); cut 0x28 is
+ * never skipped. Skip Cutscenes answers "pressed and allowed" for every cut. */
+extern void sub_000D1550_gen(void);
+static int skip_cutscenes_on(void);
+void sub_000D1550(void)
+{
+    if (skip_cutscenes_on()) {
+        uint32_t id = MEM32(0x0033FF14u);
+        static uint32_t told = 0xFFFFFFFFu;
+        if (id != 0x28u) {
+            MEM8(0x0033FF34u) = 1;
+            if (told != id) { told = id; fprintf(stderr, "[cutscene] cut %u skipped (Skip Cutscenes)\n", id); }
+        }
+        eax = (eax & ~0xFFu) | 1u;
+        esp += 4;
+        return;
+    }
+    sub_000D1550_gen();
+}
+
+volatile int hp1_skip_cutscenes = -1;   /* the overlay's row sets it live; -1: HP1_SKIP_CUTSCENES */
+static int skip_cutscenes_on(void)
+{
+    if (hp1_skip_cutscenes < 0) {
+        const char *e = getenv("HP1_SKIP_CUTSCENES");
+        hp1_skip_cutscenes = e && *e == '1';
+    }
+    return hp1_skip_cutscenes;
+}
+static void cutscene_skip_tick(void)
+{
+    static int on;
+    uint32_t lb = MEM32(HP1_LETTERBOX);
+    int want = skip_cutscenes_on() && (lb == 1 || lb == 2);
+    if (want != on) {
+        on = want;
+        xbox_vblank_turbo = on ? 8 : 1;
+        nv2a_mtl_turbo = on;
+        xa2_set_mute(on);
+        fprintf(stderr, "[cutscene] %s\n", on ? "fast-forward (Skip Cutscenes)" : "back to normal speed");
+    }
+    if (on && MEM32(HP1_SPEECH_STATE) == 2u)
+        stop_speech();
+}
+
 /* XInputGetState(hDevice, pState): dwPacketNumber, then XINPUT_GAMEPAD
  * { wButtons, bAnalogButtons[8], sThumbLX, LY, RX, RY } -- the USB report's
  * bytes 2..19 laid out the same way. The packet number moves only on a
@@ -616,6 +685,7 @@ void sub_001F523C(void)
     uint32_t st = ARG(1);
     uint8_t rep[20];
     int i = xi_hle() ? xi_index(ARG(0)) : -2, k;
+    cutscene_skip_tick();
     if (i == -2) { sub_001F523C_gen(); return; }
     if (i < 0) {
         eax = 6;
@@ -634,6 +704,16 @@ void sub_001F523C(void)
                             rep[8], rep[9], rep[10], rep[11], (int16_t)(rep[12] | rep[13] << 8),
                             (int16_t)(rep[14] | rep[15] << 8), (int16_t)(rep[16] | rep[17] << 8),
                             (int16_t)(rep[18] | rep[19] << 8));
+            }
+            {   /* HP1_CAPTURE_ON_BACK=<n>: Back pressed logs the next n frames' draws (as F12) */
+                static int cob = -1;
+                extern volatile int nv2a_mtl_capture, nv2a_mtl_capture_frames;
+                if (cob < 0) { const char *e = getenv("HP1_CAPTURE_ON_BACK"); cob = e ? atoi(e) : 0; }
+                if (cob > 0 && (rep[2] & 0x20) && !(s_xi[i].last[0] & 0x20)) {
+                    nv2a_mtl_capture_frames = cob;
+                    nv2a_mtl_capture = cob + 1;
+                    fprintf(stderr, "[capture] Back: %d frames\n", cob);
+                }
             }
             memcpy(s_xi[i].last, rep + 2, 16);
         }
@@ -671,9 +751,25 @@ void sub_001F52AF(void)
 /* ── Debug: HP1_PEEK="addr:f,addr:x,..." -- guest words once a second ──
  * f = float, x = hex dword, d = int; printed from the vblank DPC hook (the
  * runtime's weak xbox_after_vblank_dpc). */
+/* HP1_MEMSNAP=<dir>: .data (0x210F20-0x375330) to <dir>/s<vblank>.bin every 2 s
+ * (find state flags by diffing snapshots taken in different game states). */
+static void memsnap(void)
+{
+    static int on = -1; static char dir[512]; static unsigned t;
+    if (on < 0) { const char *e = getenv("HP1_MEMSNAP"); on = e && *e; if (on) snprintf(dir, sizeof dir, "%s", e); }
+    if (!on || ++t % 120)
+        return;
+    {
+        char fn[600]; FILE *f;
+        snprintf(fn, sizeof fn, "%s/s%07u.bin", dir, t);
+        if ((f = fopen(fn, "wb"))) { fwrite((const void *)XBOX_PTR(0x210F20u), 1, 0x375330u - 0x210F20u, f); fclose(f); }
+    }
+}
+
 void xbox_after_vblank_dpc(void)
 {
     static int on = -1, n;
+    memsnap();
     static uint32_t addr[16];
     static char kind[16];
     static unsigned ticks;

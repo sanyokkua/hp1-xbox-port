@@ -100,6 +100,14 @@ static void apply_kbd(int c, int at_start) { env("NFSU2_KEYBOARD", k_kbd_v[c], a
 
 /* Tweaks */
 static void apply_skip_logos(int c, int at_start) { env("HP1_SKIP_LOGOS", c ? "1" : "0", at_start); }
+extern volatile int hp1_skip_cutscenes;  /* recomp_manual.c */
+static void apply_skip_cutscenes(int c, int at_start)
+{
+    const char *e;
+    env("HP1_SKIP_CUTSCENES", c ? "1" : "0", at_start);    /* at start a hand-set value wins */
+    e = getenv("HP1_SKIP_CUTSCENES");
+    hp1_skip_cutscenes = at_start ? (e && *e == '1') : c;
+}
 
 /* Advanced */
 static void apply_fps_counter(int c, int at_start)
@@ -149,6 +157,10 @@ static const OverlayOption k_options[] = {
     { "Tweaks", "Skip Logo Movies", "Start without the Warner Bros. and EA logo movies.",
       "The logo movies before the title screen: from the next start.",
       CHOICES(k_onoff), 0, 1, "skip_logos", k_01, apply_skip_logos },
+
+    { "Tweaks", "Skip Cutscenes", "Story scenes run fast-forward and silent (the game has no skip): "
+      "a few seconds instead of minutes.", "Every story scene with the black bars: at once.",
+      CHOICES(k_onoff), 0, 0, "skip_cutscenes", k_01, apply_skip_cutscenes },
 
     { "Advanced", "Performance Overlay", "Frames per second and the slowest frame, top left "
       "(also Cmd+Option+F).", "Top left of the screen: at once.",
