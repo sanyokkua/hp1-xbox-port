@@ -62,7 +62,7 @@ static const char *const k_picture[] = { "Fit (4:3, bars at the sides)", "Fill (
 static const char *const k_picture_v[] = { "fit", "fill" };
 static void apply_picture(int c, int at_start) { env("NFSU2_SCREEN", k_picture_v[c], at_start); }
 
-static const char *const k_fps[] = { "The original (30/60 as the game asks)", "60 fps" };
+static const char *const k_fps[] = { "Original", "60 fps" };
 static const char *const k_fps_v[] = { "title", "60" };
 static void apply_fps(int c, int at_start) { env("HP1_FPS", k_fps_v[c], at_start); }
 
