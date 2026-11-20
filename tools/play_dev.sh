@@ -4,6 +4,7 @@
 # ~/Library), the game from an APFS clone of game/extracted. Controller changes are logged (HP1_PAD_LOG=1).
 #   tools/play_dev.sh            build (incremental) and play
 #   HP1_NO_BUILD=1 tools/play_dev.sh
+# The runtime's periodic logging is off (RECOMP_QUIET=1; RECOMP_QUIET=0 brings it back).
 # Extra env passes through (HP1_FPS=60, RECOMP_PAD_SCRIPT=..., HP1_PEEK=..., ...).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,4 +16,4 @@ fi
 mkdir -p "$P/home"
 [[ -f "$P/game/default.xbe" ]] || cp -c -R "$ROOT/game/extracted" "$P/game"
 cd "$P/home"
-HOME="$P/home" NFSU2_GAME_DIR="$P/game" HP1_PAD_LOG="${HP1_PAD_LOG:-1}" "$BIN" 2>&1 | tee "$P/last.log"
+HOME="$P/home" NFSU2_GAME_DIR="$P/game" HP1_PAD_LOG="${HP1_PAD_LOG:-1}" RECOMP_QUIET="${RECOMP_QUIET:-1}" "$BIN" 2>&1 | tee "$P/last.log"
