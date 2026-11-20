@@ -631,12 +631,14 @@ static void stop_speech(void)
  * two pad actions held ([0x356C04], [0x356C34] in the action table) and the
  * cut allowed by [0x329DB4 + cut id] (only cuts already seen), it sets
  * [0x33FF34] and the cut ends at its next update (sub_000D42F0); cut 0x28 is
- * never skipped. Skip Cutscenes answers "pressed and allowed" for every cut. */
+ * never skipped. Skip Cutscenes answers "pressed and allowed" once for every cut. */
 extern void sub_000D1550_gen(void);
 static int skip_cutscenes_on(void);
 void sub_000D1550(void)
 {
-    if (skip_cutscenes_on()) {
+    /* Once per cut, as a button press is: each "pressed" restarts the cut's
+     * 0.5 s fade-out (sub_000DC7B0), and the cut ends only when it is done. */
+    if (skip_cutscenes_on() && !MEM8(0x0033FF34u)) {
         uint32_t id = MEM32(0x0033FF14u);
         static uint32_t told = 0xFFFFFFFFu;
         if (id != 0x28u) {
@@ -671,8 +673,12 @@ static void cutscene_skip_tick(void)
         xa2_set_mute(on);
         fprintf(stderr, "[cutscene] %s\n", on ? "fast-forward (Skip Cutscenes)" : "back to normal speed");
     }
-    if (on && MEM32(HP1_SPEECH_STATE) == 2u)
+    if (on && MEM32(HP1_SPEECH_STATE) == 2u) {
+        static int told;
+        if (told++ < 50)
+            fprintf(stderr, "[cutscene] line of speech stopped\n");
         stop_speech();
+    }
 }
 
 /* XInputGetState(hDevice, pState): dwPacketNumber, then XINPUT_GAMEPAD
