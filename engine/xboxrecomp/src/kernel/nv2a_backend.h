@@ -167,6 +167,13 @@ typedef struct {
     void (*draw_raw)(const Nv2aRawBatch *b);
     /* NV2A_BACKEND_* bits. */
     uint32_t flags;
+    /* Optional (hp1-xbox-port). A 2D image blit (NV062 surfaces + NV09F, what
+     * XDK D3DDevice_CopyRects pushes): w x h pixels of bpp bytes from (sx,sy)
+     * of the image at src_va (pitch src_pitch) to (dx,dy) of the one at dst_va.
+     * Returns 1 when the back end did it (the source is a surface it renders
+     * on the GPU); 0 and the executor copies guest memory. */
+    int (*blit)(uint32_t src_va, uint32_t src_pitch, uint32_t dst_va, uint32_t dst_pitch, uint32_t bpp,
+                uint32_t sx, uint32_t sy, uint32_t dx, uint32_t dy, uint32_t w, uint32_t h);
 } Nv2aBackend;
 
 /* draw_raw takes attributes in their stored format (Nv2aRawBatch.attr_direct).

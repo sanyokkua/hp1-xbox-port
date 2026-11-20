@@ -5,6 +5,7 @@
 #   tools/play_dev.sh            build (incremental) and play
 #   HP1_NO_BUILD=1 tools/play_dev.sh
 # The runtime's periodic logging is off (RECOMP_QUIET=1; RECOMP_QUIET=0 brings it back).
+# 2D blits (CopyRects) are logged as [blit] lines, other 2D methods as [subch].
 # Extra env passes through (HP1_FPS=60, RECOMP_PAD_SCRIPT=..., HP1_PEEK=..., ...).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,4 +17,4 @@ fi
 mkdir -p "$P/home"
 [[ -f "$P/game/default.xbe" ]] || cp -c -R "$ROOT/game/extracted" "$P/game"
 cd "$P/home"
-HOME="$P/home" NFSU2_GAME_DIR="$P/game" HP1_PAD_LOG="${HP1_PAD_LOG:-1}" RECOMP_QUIET="${RECOMP_QUIET:-1}" "$BIN" 2>&1 | tee "$P/last.log"
+HOME="$P/home" NFSU2_GAME_DIR="$P/game" HP1_PAD_LOG="${HP1_PAD_LOG:-1}" RECOMP_BLIT_LOG="${RECOMP_BLIT_LOG:-1}" RECOMP_SUBCH_TRACE="${RECOMP_SUBCH_TRACE:-80}" RECOMP_QUIET="${RECOMP_QUIET:-1}" "$BIN" 2>&1 | tee "$P/last.log"

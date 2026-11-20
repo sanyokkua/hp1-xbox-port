@@ -4,8 +4,8 @@
  * the host's and the Metal renderer's settings: this game's own Options screen
  * is left as it is. Every row is kept in settings.ini.
  *
- * Live: everything but Frame Rate, Picture and Keyboard as Controller, which
- * are read at start.
+ * Live: everything but Frame Rate, Picture, Keyboard as Controller and Skip
+ * Logo Movies, which are read at start.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -98,6 +98,9 @@ static const char *const k_kbd[] = { "Without a controller", "Always", "Off" };
 static const char *const k_kbd_v[] = { "1", "2", "0" };
 static void apply_kbd(int c, int at_start) { env("NFSU2_KEYBOARD", k_kbd_v[c], at_start); }
 
+/* Tweaks */
+static void apply_skip_logos(int c, int at_start) { env("HP1_SKIP_LOGOS", c ? "1" : "0", at_start); }
+
 /* Advanced */
 static void apply_fps_counter(int c, int at_start)
 {
@@ -142,6 +145,10 @@ static const OverlayOption k_options[] = {
     { "Input", "Keyboard as Controller", "Arrows/WASD move, Enter is A and Start, Esc is B, P is Start.",
       "The keyboard in the game (not in this menu): from the next start.",
       CHOICES(k_kbd), 0, 1, "keyboard", k_kbd_v, apply_kbd },
+
+    { "Tweaks", "Skip Logo Movies", "Start without the Warner Bros. and EA logo movies.",
+      "The logo movies before the title screen: from the next start.",
+      CHOICES(k_onoff), 0, 1, "skip_logos", k_01, apply_skip_logos },
 
     { "Advanced", "Performance Overlay", "Frames per second and the slowest frame, top left "
       "(also Cmd+Option+F).", "Top left of the screen: at once.",

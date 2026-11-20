@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
@@ -850,4 +851,33 @@ void recomp_unimpl(const char *text, uint32_t va)
         fflush(stderr);
     }
     if (stop) abort();
+}
+
+/* ── Skip the logo movies (overlay: Tweaks > Skip Logo Movies, HP1_SKIP_LOGOS=1) ──
+ * From HP-PS-Xbox-Recomp (MIT, port/src/hle_video.c, PAL sub_00164450): the boot
+ * sequence (sub_00023D50) sets [0x3253CC] = 1, then calls the movie player
+ * sub_00164460(name, 0, 0, 0x1C330) (cdecl) for movies/splashwb.thp and the
+ * language's movies/ea_<lang>.thp; a button that skips a movie clears the flag.
+ * Not playing them leaves it at 1, as a movie that ran to its end: the next state
+ * is the same. The callers do not read the return value. */
+static int skip_logos(void)
+{
+    const char *e = getenv("HP1_SKIP_LOGOS");
+    return e && *e == '1';
+}
+
+extern void sub_00164460_gen(void);
+void sub_00164460(void)
+{
+    uint32_t name = MEM32(esp + 4u);   /* the name, cdecl argument 0 */
+    if (name && skip_logos()) {
+        const char *n = (const char *)XBOX_PTR(name);
+        if (!strcasecmp(n, "movies/splashwb.thp") || !strncasecmp(n, "movies/ea_", 10)) {
+            fprintf(stderr, "[movie] skipped %s (Skip Logo Movies)\n", n);
+            eax = 0;
+            esp += 4;                           /* cdecl: only the return address */
+            return;
+        }
+    }
+    sub_00164460_gen();
 }

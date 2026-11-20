@@ -4167,6 +4167,53 @@ static void flip_apply_retired(void)
                         : s_gpu.flip_read + 1;
 }
 
+/* hp1-xbox-port: the XDK's 2D blit, as D3DDevice_CopyRects pushes it (HP1's
+ * Remembrall and save screens copy the frame into a texture and draw that):
+ * subchannel 3 is NV062 (SET_COLOR_FORMAT 0x300, SET_PITCH 0x304 source in the
+ * low half, SET_OFFSET_SOURCE 0x308, SET_OFFSET_DESTIN 0x30C), subchannel 2
+ * NV09F (POINT_IN 0x300, POINT_OUT 0x304, SIZE 0x308 starts it; y << 16 | x).
+ * Before this every 2D method was dropped and the texture stayed black. */
+static void blit_method(uint32_t subch, uint32_t method, uint32_t param)
+{
+    static uint32_t fmt, pitch, src, dst, pin, pout;
+    if (subch == 3) {
+        switch (method) {
+        case 0x300: fmt = param; break;
+        case 0x304: pitch = param; break;
+        case 0x308: src = param; break;
+        case 0x30C: dst = param; break;
+        }
+        return;
+    }
+    if (subch != 2)
+        return;
+    if (method == 0x300) { pin = param; return; }
+    if (method == 0x304) { pout = param; return; }
+    if (method == 0x308) {
+        uint32_t bpp = fmt == 1 ? 1 : (fmt >= 2 && fmt <= 5) ? 2 : 4;
+        uint32_t sp = pitch & 0xFFFF, dp = pitch >> 16;
+        uint32_t sx = pin & 0xFFFF, sy = pin >> 16, dx = pout & 0xFFFF, dy = pout >> 16;
+        uint32_t w = param & 0xFFFF, h = param >> 16, y;
+        uint32_t sva = dma_resolve(src), dva = dma_resolve(dst);
+        static int log = -1, logged;
+        if (log < 0) { const char *e = getenv("RECOMP_BLIT_LOG"); log = e && *e == '1'; }
+        if (log && logged++ < 64)
+            fprintf(stderr, "[blit] fmt %u %08X(p%u) %u,%u -> %08X(p%u) %u,%u  %ux%u\n",
+                    fmt, sva, sp, sx, sy, dva, dp, dx, dy, w, h);
+        if (!w || !h || !sp || !dp || !sva || !dva)
+            return;
+        if (s_backend && s_backend->blit &&
+            s_backend->blit(sva, sp, dva, dp, bpp, sx, sy, dx, dy, w, h))
+            return;
+        {
+            uint8_t *mem = (uint8_t *)xbox_GetMemoryOffset();
+            for (y = 0; y < h; y++)
+                memmove(mem + dva + (dy + y) * dp + dx * bpp, mem + sva + (sy + y) * sp + sx * bpp,
+                        (size_t)w * bpp);
+        }
+    }
+}
+
 void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param)
 {
     static int inited;
@@ -4177,6 +4224,15 @@ void nv2a_pb_exec_method(uint32_t subch, uint32_t method, uint32_t param)
      * blit before NFSU2's loading screen (main menu -> Career / Quick Race)
      * switched culling on with the menu car's FRONT/CW state and culled the
      * whole screen. */
+    if (subch != 0) {   /* hp1-xbox-port: RECOMP_SUBCH_TRACE=n lists the first n 2D-class methods */
+        static int st = -1, shown;
+        if (st < 0) { const char *e = getenv("RECOMP_SUBCH_TRACE"); st = e ? atoi(e) : 0; }
+        if (shown < st && !(subch == 5 && method == 0x0310)) {
+            shown++;
+            fprintf(stderr, "[subch] %u m %04X = %08X\n", subch, method, param);
+        }
+        blit_method(subch, method, param);
+    }
     if (subch == 0) {
         uint32_t w = (method & 0x1FFCu) / 4;
         if (s_reg[w] != param) {

@@ -3263,7 +3263,34 @@ static void mtl_draw_raw_inner(const Nv2aRawBatch *b)
                 if (r[base + 3] & 0x40000000u)
                     fprintf(stderr, " | s%u %08X f%02X", k, b->tex_va[k], (r[base + 1] >> 8) & 0xFF);
             }
-            fprintf(stderr, " | light %u spec %u\n", r[0x314 / 4], r[0x3B8 / 4]);
+            fprintf(stderr, " | light %u spec %u", r[0x314 / 4], r[0x3B8 / 4]);
+            /* What makes a draw vanish: target, blend, colour mask, alpha test, and
+             * vertex 0's position and colour (attribute 0 and 3). */
+            fprintf(stderr, " | rt %08X bl %u %X %X %X cm %08X at %u %X %u",
+                    b->color_va, r[0x304 / 4], r[0x344 / 4], r[0x348 / 4], r[0x350 / 4], r[0x358 / 4],
+                    r[0x300 / 4], r[0x33C / 4], r[0x340 / 4]);
+            for (k = 0; k < 4; k++) {
+                uint32_t base = (0x1B00u + k * 0x40u) / 4;
+                if (r[base + 3] & 0x40000000u)
+                    fprintf(stderr, " | t%u fmt %08X rect %08X", k, r[base + 1], r[base + 7]);
+            }
+            for (k = 0; k < 4; k += 3) {
+                float v[4] = { 0, 0, 0, 1 };
+                if (b->attr_direct & (1u << k)) {
+                    const uint8_t *q = b->direct[k].ptr;
+                    uint32_t c;
+                    if (b->direct[k].type == 2)
+                        for (c = 0; c < b->direct[k].size && c < 4; c++) memcpy(&v[c], q + 4 * c, 4);
+                    else if (b->direct[k].type == 0) {
+                        v[0] = q[2] / 255.f; v[1] = q[1] / 255.f; v[2] = q[0] / 255.f; v[3] = q[3] / 255.f;
+                    }
+                } else if (b->attrs && (b->attr_present & (1u << k)))
+                    memcpy(v, b->attrs + k * 4, sizeof v);
+                else
+                    memcpy(v, b->attr_const[k], sizeof v);
+                fprintf(stderr, " | a%u %.3g %.3g %.3g %.3g", k, v[0], v[1], v[2], v[3]);
+            }
+            fputc('\n', stderr);
         }
         if (sk && fidx >= sa && fidx <= sb)
             return;
@@ -3286,7 +3313,7 @@ static void mtl_draw_raw_inner(const Nv2aRawBatch *b)
          * right after stopping; the ring is a feedback layer): skip its composite,
          * a draw into a full-size surface sampling the 320x240 ring
          * 0x82EBA380/0x82F05400. NFSU2_BLUR_OFF=0 keeps the title's blur. */
-        if (nv2a_mtl_blur_off < 0) { const char *e = getenv("NFSU2_BLUR_OFF"); nv2a_mtl_blur_off = !(e && *e == '0'); }
+        if (nv2a_mtl_blur_off < 0) { const char *e = getenv("NFSU2_BLUR_OFF"); nv2a_mtl_blur_off = e && *e == '1'; }  /* hp1-xbox-port: NFSU2's addresses; off unless asked */
         if (nv2a_mtl_blur_off && s->w >= 640)
             for (i = 0; i < 4; i++)
                 if (sampled[i] && sampled[i]->w == 320 && sampled[i]->h == 240 &&
@@ -4042,12 +4069,97 @@ static void mtl_draw(const Nv2aSurface *s, const Nv2aBatch *b)
     (void)s; (void)b;                        /* draw_raw handles every batch */
 }
 
+/* hp1-xbox-port: CopyRects (NV062 + NV09F blit) from a surface the GPU renders
+ * (HP1's Remembrall and save screens copy the frame into a texture and draw
+ * it behind the menu). The surface lives only here, so the copy is done here:
+ * the region is drawn at the title's size into a shared texture, read back and
+ * written to the destination in guest memory, as the hardware writes it; the
+ * texture cache sees new bytes at its next use. One wait on the GPU per copy
+ * (menus only). A source with no surface is left to the executor (memmove). */
+static int mtl_blit(uint32_t src_va, uint32_t src_pitch, uint32_t dst_va, uint32_t dst_pitch, uint32_t bpp,
+                    uint32_t sx, uint32_t sy, uint32_t dx, uint32_t dy, uint32_t w, uint32_t h)
+{
+    @autoreleasepool {
+        MtSurf *src;
+        id<MTLTexture> tmp;
+        MTLTextureDescriptor *td;
+        uint8_t *mem = (uint8_t *)xbox_GetMemoryOffset();
+        uint32_t *row, y, x;
+        int g, f;
+        (void)src_pitch;
+        if (!ready())
+            return 0;
+        pend_flush();
+        src = surf_find(src_va);
+        if (!src || w > 4096 || h > 4096)
+            return 0;
+        if (sx + w > src->w) w = src->w > sx ? src->w - sx : 0;
+        if (sy + h > src->h) h = src->h > sy ? src->h - sy : 0;
+        if (!w || !h)
+            return 1;
+        td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                width:w height:h mipmapped:NO];
+        td.usage = MTLTextureUsageRenderTarget;
+        td.storageMode = MTLStorageModeShared;
+        tmp = [s_dev newTextureWithDescriptor:td];
+        if (!tmp)
+            return 0;
+        g = s_copy_gamma; f = s_copy_fxaa;
+        s_copy_gamma = s_copy_fxaa = 0;
+        {
+            float uv[4] = { (float)sx / src->w * src->pw / (float)src->tex.width,
+                            (float)sy / src->h * src->ph / (float)src->tex.height,
+                            (float)(sx + w) / src->w * src->pw / (float)src->tex.width,
+                            (float)(sy + h) / src->h * src->ph / (float)src->tex.height };
+            MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+            id<MTLRenderCommandEncoder> e;
+            MTLViewport vp = { 0, 0, w, h, 0.0, 1.0 };
+            end_pass();
+            end_blit();
+            rp.colorAttachments[0].texture = tmp;
+            rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+            rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+            e = [s_cb renderCommandEncoderWithDescriptor:rp];
+            [e setRenderPipelineState:s_copy_pipe];
+            [e setViewport:vp];
+            [e setVertexBytes:uv length:sizeof uv atIndex:0];
+            [e setFragmentTexture:src->tex atIndex:0];
+            [e setFragmentSamplerState:s_linear atIndex:0];
+            [e drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+            [e endEncoding];
+        }
+        s_copy_gamma = g; s_copy_fxaa = f;
+        flush_frame_wait();
+        row = malloc((size_t)w * 4);
+        if (!row)
+            return 1;
+        for (y = 0; y < h; y++) {
+            uint8_t *d = mem + dst_va + (size_t)(dy + y) * dst_pitch + (size_t)dx * bpp;
+            [tmp getBytes:row bytesPerRow:(size_t)w * 4 fromRegion:MTLRegionMake2D(0, y, w, 1) mipmapLevel:0];
+            if (bpp == 4)
+                memcpy(d, row, (size_t)w * 4);                     /* BGRA8 = A8R8G8B8 / X8R8G8B8 */
+            else if (bpp == 2)
+                for (x = 0; x < w; x++) {                          /* R5G6B5 */
+                    uint32_t c = row[x];
+                    uint16_t v = (uint16_t)(((c >> 8) & 0xF800) | ((c >> 5) & 0x07E0) | ((c >> 3) & 0x001F));
+                    memcpy(d + 2 * x, &v, 2);
+                }
+            else
+                for (x = 0; x < w; x++)
+                    d[x] = (uint8_t)((row[x] >> 8) & 0xFF);       /* Y8: green */
+        }
+        free(row);
+        return 1;
+    }
+}
+
 static const Nv2aBackend s_backend = {
     mtl_clear,
     mtl_draw,
     mtl_flip,
     mtl_draw_raw,
     NV2A_BACKEND_RAW_DIRECT,
+    mtl_blit,
 };
 
 void nv2a_mtl_install(void)
