@@ -1520,6 +1520,16 @@ static id<MTLSamplerState> sampler_get(uint32_t key)
     d.sAddressMode = wrap_mode(key & 0xF);
     d.tAddressMode = wrap_mode((key >> 8) & 0xF);
     d.rAddressMode = MTLSamplerAddressModeRepeat;
+    /* hp1-xbox-port: border addressing with the stage's border colour, as
+     * near as Metal has (bits 28-29: 0 transparent black, 1 opaque black,
+     * 2 opaque white). HP1's floor shadows multiply with a white border;
+     * transparent black darkened the whole shadow quad. */
+    if (((key & 0xF) == 4 || ((key >> 8) & 0xF) == 4) && ((key >> 28) & 3)) {
+        if ((key & 0xF) == 4) d.sAddressMode = MTLSamplerAddressModeClampToBorderColor;
+        if (((key >> 8) & 0xF) == 4) d.tAddressMode = MTLSamplerAddressModeClampToBorderColor;
+        d.borderColor = ((key >> 28) & 3) == 2 ? MTLSamplerBorderColorOpaqueWhite
+                                               : MTLSamplerBorderColorOpaqueBlack;
+    }
     d.magFilter = (key & 0x10000) ? MTLSamplerMinMagFilterNearest : MTLSamplerMinMagFilterLinear;
     d.minFilter = (key & 0x20000) ? MTLSamplerMinMagFilterNearest : MTLSamplerMinMagFilterLinear;
     /* Only replaced (HD) textures have mips; the game's own have one level. */
@@ -1608,6 +1618,11 @@ static void bind_stage(const uint32_t *regs, int i, float scale[2], __strong id<
     addr = regs[base + 2];
     filter = regs[base + 5];
     key = (addr & 0xF0F);
+    if ((addr & 0xF) == 4 || ((addr >> 8) & 0xF) == 4) {
+        uint32_t bc = regs[base + 9];           /* SET_TEXTURE_BORDER_COLOR, ARGB */
+        if ((bc >> 24) >= 0x80)
+            key |= ((bc & 0xFFFFFFu) >= 0x808080u ? 2u : 1u) << 28;
+    }
     if (((filter >> 24) & 0xF) == 1) key |= 0x10000;
     if (((filter >> 16) & 0xFF) == 1) key |= 0x20000;
     {

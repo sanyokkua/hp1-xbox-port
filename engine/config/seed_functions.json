@@ -10,5 +10,21 @@
  {
   "start": "0x000EC310",
   "note": "indirect-call target seen in the main menu (run log)"
+ },
+ {
+  "start": "0x00048030",
+  "note": "icall target after a jump table: play test crash (KeBugCheck) in Ollivanders"
+ },
+ {
+  "start": "0x0009D780",
+  "note": "HP-PS-Xbox-Recomp icall seed; also found by the int3-gap scan"
+ },
+ {
+  "start": "0x000E3020",
+  "note": "int3-gap scan: function start not lifted"
+ },
+ {
+  "start": "0x000C9670",
+  "note": "HP-PS-Xbox-Recomp icall seed 0xC9680 (PAL) on NTSC"
  }
 ]
