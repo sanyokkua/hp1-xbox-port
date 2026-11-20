@@ -1,1 +1,14 @@
-[{"start":"0x000800E0"}]
+[
+ {
+  "start": "0x000800E0",
+  "note": "HP-PS-Xbox-Recomp icall seed (same address on NTSC)"
+ },
+ {
+  "start": "0x00023BD0",
+  "note": "main menu per-frame callback (movie player); hidden behind the jump table at 0x23BB2"
+ },
+ {
+  "start": "0x000EC310",
+  "note": "indirect-call target seen in the main menu (run log)"
+ }
+]

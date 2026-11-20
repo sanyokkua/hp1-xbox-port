@@ -3658,6 +3658,15 @@ static HANDLE bridge_resolve_handle(uint32_t token)
     return (HANDLE)(uintptr_t)token;
 }
 
+/* hp1-xbox-port: set a guest event by its handle, from host code (HP1's
+ * XInputSetState replacement completes the rumble request this way). */
+void xbox_GuestSetEvent(uint32_t token)
+{
+    HANDLE h = bridge_resolve_handle(token);
+    if (h)
+        xbox_NtSetEvent(h, NULL);
+}
+
 static HANDLE bridge_take_handle(uint32_t token)
 {
     if ((token & 0xFF000000u) == BRIDGE_HANDLE_TAG) {

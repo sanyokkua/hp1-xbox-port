@@ -3480,6 +3480,17 @@ static void draw_primitive(void)
                     s_gpu.draws, s_gpu.prim, s_gpu.idx_count, s_gpu.xform_mode,
                     s_gpu.attr[0].offset, s_gpu.attr[0].stride, s_gpu.attr[0].type, ok,
                     p[0], p[1], p[2], p[3], s_gpu.color_offset);
+            if (getenv("RECOMP_DRAW_TRACE_VERTS")) {
+                uint32_t k, a;
+                for (k = 1; k < s_gpu.idx_count && k < 12; k++) {
+                    fetch_attr(&s_gpu.attr[0], s_gpu.idx[k], p);
+                    fprintf(stderr, "[draw]    v%u (%.3f %.3f %.3f %.3f)", k, p[0], p[1], p[2], p[3]);
+                    for (a = 1; a < 4; a++)
+                        if (s_gpu.attr[a].stride && fetch_attr(&s_gpu.attr[a], s_gpu.idx[k], p))
+                            fprintf(stderr, " a%u(%.2f %.2f %.2f %.2f)", a, p[0], p[1], p[2], p[3]);
+                    fprintf(stderr, "\n");
+                }
+            }
         }
     }
     s_gpu.verts += s_gpu.idx_count;

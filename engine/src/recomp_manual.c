@@ -27,6 +27,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <unistd.h>
 #include <math.h>
 
 /* The generated register model (g_eax/g_esp are thread-local there) and the
@@ -446,6 +447,262 @@ void sub_00184950(void)
     }
 }
 
+/* ── Controllers: XAPI's XInput answered from the host pad ─────────────
+ *
+ * From MiddleDucky/HP-PS-Xbox-Recomp's port/src/hle_input.c (MIT; itself from
+ * SCDA-XBERecomp's xapi.cpp), addresses moved PAL -> NTSC (+0x20: XPP follows
+ * .text, 32 bytes longer on this disc). Over the emulated OHCI the pad
+ * enumerated up to SET_CONFIGURATION and HP1 never opened it; HP-PS also found
+ * the stick arriving late that way. XInitDevices, XInputOpen/Close,
+ * XInputGetCapabilities, XInputGetState and XInputSetState are answered here;
+ * XGetDevices and XGetDeviceChanges stay XAPI's and read the device-type record
+ * kept below. The state is the USB pad's report (usb_gamepad_report): host
+ * pad, keyboard, RECOMP_PAD_SCRIPT and the overlay's neutral pad all apply.
+ * HP1_XINPUT_USB=1 keeps XAPI's own bodies on the emulated USB. */
+#include <pthread.h>
+#define XPP_GAMEPAD_TYPE 0x001F424Cu  /* g_DeviceType_Gamepad: Current, Change, Previous connected */
+#define XPP_TYPES_BEGIN  0x001F4224u  /* the linked device types, begin .. end */
+#define XPP_TYPES_END    0x001F422Cu
+#define XI_HANDLE_BASE   0x5ADE0010u  /* opaque handles, never dereferenced by the title */
+#define XI_MAX_HANDLES   32
+#define XI_PORTS         2            /* the runtime's pads */
+#define ARG(i)           MEM32(esp + 4u + 4u * (i))
+
+extern int usb_gamepad_connected(int dev);
+extern int usb_gamepad_report(int dev, uint8_t *out, int max);
+extern void usb_gamepad_output(int dev, const uint8_t *data, int len);
+extern void xbox_GuestSetEvent(uint32_t token);
+
+static pthread_mutex_t s_xi_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct { int used; uint32_t port, packet; uint8_t last[16]; } s_xi[XI_MAX_HANDLES];
+
+static int xi_hle(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("HP1_XINPUT_USB");
+        on = !(e && *e == '1');
+        fprintf(stderr, "[input] XInput %s\n", on ? "from the host pad (direct)" : "through the emulated USB");
+    }
+    return on;
+}
+
+static void xi_update_ports(void)
+{
+    uint32_t cur = 0, old;
+    int p;
+    for (p = 0; p < XI_PORTS; p++)
+        if (usb_gamepad_connected(p))
+            cur |= 1u << p;
+    pthread_mutex_lock(&s_xi_lock);
+    old = MEM32(XPP_GAMEPAD_TYPE);
+    if (cur != old) {
+        MEM32(XPP_GAMEPAD_TYPE + 4) |= cur ^ old;
+        MEM32(XPP_GAMEPAD_TYPE) = cur;
+        fprintf(stderr, "[input] controller ports now %X (was %X)\n", cur, old);
+    }
+    pthread_mutex_unlock(&s_xi_lock);
+}
+
+static void *xi_poller(void *unused)
+{
+    (void)unused;
+    for (;;) {
+        usleep(250000);
+        xi_update_ports();
+    }
+    return NULL;
+}
+
+static int xi_index(uint32_t h)
+{
+    uint32_t i = (h - XI_HANDLE_BASE) / 16u;
+    if (h < XI_HANDLE_BASE || (h - XI_HANDLE_BASE) % 16u || i >= XI_MAX_HANDLES || !s_xi[i].used)
+        return -1;
+    return (int)i;
+}
+
+/* XInitDevices(dwPreallocTypeCount, PreallocTypes). The pads are reported by
+ * the poller 250 ms in, as insertions, as on the console (HP-PS: a pad already
+ * present here was consumed by a boot-time XGetDevices and never "arrived"). */
+extern void sub_001F4563_gen(void);
+void sub_001F4563(void)
+{
+    static int poller;
+    uint32_t t;
+    int i;
+    if (!xi_hle()) { sub_001F4563_gen(); return; }
+    for (t = XPP_TYPES_BEGIN; t < XPP_TYPES_END; t += 4) {
+        uint32_t info = MEM32(t), type = info ? MEM32(info + 4) : 0;
+        if (type)
+            for (i = 0; i < 3; i++) MEM32(type + 4u * i) = 0;
+    }
+    for (i = 0; i < 3; i++) MEM32(XPP_GAMEPAD_TYPE + 4u * i) = 0;
+    if (!poller) {
+        pthread_t th;
+        poller = 1;
+        pthread_create(&th, NULL, xi_poller, NULL);
+        pthread_detach(th);
+    }
+    esp += 4 + 8;
+}
+
+/* XInputOpen(DeviceType, dwPort, dwSlot, pPollingParameters) -> HANDLE */
+extern void sub_001F5002_gen(void);
+void sub_001F5002(void)
+{
+    uint32_t type = ARG(0), port = ARG(1);
+    int i;
+    if (!xi_hle()) { sub_001F5002_gen(); return; }
+    eax = 0;
+    if (type == XPP_GAMEPAD_TYPE && port < XI_PORTS)
+        for (i = 0; i < XI_MAX_HANDLES; i++)
+            if (!s_xi[i].used) {
+                memset(&s_xi[i], 0, sizeof s_xi[i]);
+                s_xi[i].used = 1;
+                s_xi[i].port = port;
+                eax = XI_HANDLE_BASE + 16u * (uint32_t)i;
+                break;
+            }
+    fprintf(stderr, "[input] XInputOpen(port %u) = %08X\n", port, eax);
+    esp += 4 + 16;
+}
+
+/* XInputClose(hDevice) */
+extern void sub_001F5058_gen(void);
+void sub_001F5058(void)
+{
+    int i;
+    if (!xi_hle()) { sub_001F5058_gen(); return; }
+    i = xi_index(ARG(0));
+    if (i >= 0) s_xi[i].used = 0;
+    esp += 4 + 4;
+}
+
+/* XInputGetCapabilities(hDevice, pCapabilities): SubType, Reserved, then the
+ * gamepad's In (every button and axis) and Out (both motors). */
+extern void sub_001F5064_gen(void);
+void sub_001F5064(void)
+{
+    uint32_t caps = ARG(1);
+    int i = xi_hle() ? xi_index(ARG(0)) : -2, k;
+    if (i == -2) { sub_001F5064_gen(); return; }
+    if (i < 0) {
+        eax = 6;                                    /* ERROR_INVALID_HANDLE */
+    } else if (!usb_gamepad_connected((int)s_xi[i].port)) {
+        eax = 1167;                                 /* ERROR_DEVICE_NOT_CONNECTED */
+    } else {
+        MEM8(caps) = 1;                             /* XINPUT_DEVSUBTYPE_GC_GAMEPAD */
+        MEM8(caps + 1) = 0;
+        MEM16(caps + 2) = 0;
+        MEM16(caps + 4) = 0x00FF;
+        for (k = 0; k < 8; k++) MEM8(caps + 6 + k) = 0xFF;
+        for (k = 0; k < 4; k++) MEM16(caps + 14 + 2 * k) = 0xFFFF;
+        MEM16(caps + 22) = 0xFFFF;
+        MEM16(caps + 24) = 0xFFFF;
+        eax = 0;
+    }
+    esp += 4 + 8;
+}
+
+/* XInputGetState(hDevice, pState): dwPacketNumber, then XINPUT_GAMEPAD
+ * { wButtons, bAnalogButtons[8], sThumbLX, LY, RX, RY } -- the USB report's
+ * bytes 2..19 laid out the same way. The packet number moves only on a
+ * change, as XAPI's does. HP1_PAD_LOG=1 logs every change. */
+extern void sub_001F523C_gen(void);
+void sub_001F523C(void)
+{
+    uint32_t st = ARG(1);
+    uint8_t rep[20];
+    int i = xi_hle() ? xi_index(ARG(0)) : -2, k;
+    if (i == -2) { sub_001F523C_gen(); return; }
+    if (i < 0) {
+        eax = 6;
+    } else if (!usb_gamepad_connected((int)s_xi[i].port)
+               || usb_gamepad_report((int)s_xi[i].port, rep, (int)sizeof rep) < 20) {
+        eax = 1167;
+    } else {
+        static int log = -1;
+        {
+            if (memcmp(rep + 2, s_xi[i].last, 16)) {
+                s_xi[i].packet++;
+                if (log < 0) { const char *e = getenv("HP1_PAD_LOG"); log = e && *e == '1'; }
+                if (log)
+                    fprintf(stderr, "[pad] port %u buttons %02X analog %02X %02X %02X %02X %02X %02X %02X %02X"
+                            " LX %d LY %d RX %d RY %d\n", s_xi[i].port, rep[2], rep[4], rep[5], rep[6], rep[7],
+                            rep[8], rep[9], rep[10], rep[11], (int16_t)(rep[12] | rep[13] << 8),
+                            (int16_t)(rep[14] | rep[15] << 8), (int16_t)(rep[16] | rep[17] << 8),
+                            (int16_t)(rep[18] | rep[19] << 8));
+            }
+            memcpy(s_xi[i].last, rep + 2, 16);
+        }
+        MEM32(st) = s_xi[i].packet;
+        MEM16(st + 4) = rep[2];
+        for (k = 0; k < 8; k++) MEM8(st + 6 + k) = rep[4 + k];
+        for (k = 0; k < 8; k++) MEM8(st + 14 + k) = rep[12 + k];
+        eax = 0;
+    }
+    esp += 4 + 8;
+}
+
+/* XInputSetState(hDevice, pFeedback): the rumble goes to the host pad and the
+ * request completes at once. XAPI would complete it from the pad's interrupt
+ * OUT pipe, which never answers here: HP-PS found HP1 waiting on its event
+ * with INFINITE the first time Harry was hit. XINPUT_FEEDBACK: header
+ * { dwStatus, hEvent, ... } at 0, XINPUT_RUMBLE { left, right } at 0x42. */
+void sub_001F52AF(void)
+{
+    uint32_t fb = ARG(1);
+    int i = xi_index(ARG(0));
+    if (fb) {
+        uint8_t out[6] = { 0x00, 0x06, MEM8(fb + 0x42), MEM8(fb + 0x43), MEM8(fb + 0x44), MEM8(fb + 0x45) };
+        uint32_t event = MEM32(fb + 4);
+        usb_gamepad_output(i >= 0 ? (int)s_xi[i].port : 0, out, 6);
+        MEM32(fb) = 0;                              /* ERROR_SUCCESS */
+        if (event)
+            xbox_GuestSetEvent(event);
+    }
+    eax = 997;                                      /* ERROR_IO_PENDING, as XAPI returns */
+    esp += 4 + 8;
+}
+#undef ARG
+
+/* ── Debug: HP1_PEEK="addr:f,addr:x,..." -- guest words once a second ──
+ * f = float, x = hex dword, d = int; printed from the vblank DPC hook (the
+ * runtime's weak xbox_after_vblank_dpc). */
+void xbox_after_vblank_dpc(void)
+{
+    static int on = -1, n;
+    static uint32_t addr[16];
+    static char kind[16];
+    static unsigned ticks;
+    if (on < 0) {
+        const char *e = getenv("HP1_PEEK");
+        on = 0;
+        while (e && *e && n < 16) {
+            char *end;
+            addr[n] = (uint32_t)strtoul(e, &end, 16);
+            kind[n] = (*end == ':' && end[1]) ? end[1] : 'x';
+            n++;
+            e = strchr(end, ',');
+            if (e) e++;
+        }
+        on = n > 0;
+    }
+    if (!on || ++ticks % 60)
+        return;
+    {
+        int k;
+        fprintf(stderr, "[peek]");
+        for (k = 0; k < n; k++) {
+            if (kind[k] == 'f') fprintf(stderr, " %06X=%g", addr[k], MEMF(addr[k]));
+            else if (kind[k] == 'd') fprintf(stderr, " %06X=%d", addr[k], (int32_t)MEM32(addr[k]));
+            else fprintf(stderr, " %06X=%08X", addr[k], MEM32(addr[k]));
+        }
+        fprintf(stderr, "\n");
+    }
+}
+
 /*
  * Return a function pointer to override the given Xbox VA, or NULL
  * to fall through to the auto-generated dispatch table.
@@ -576,6 +833,7 @@ void recomp_icall_not_code_log(uint32_t va)
  * cause rather than wherever the damage surfaces. */
 #include <stdlib.h>
 #include <time.h>
+#include <unistd.h>
 
 void recomp_unimpl(const char *text, uint32_t va)
 {
