@@ -3463,6 +3463,25 @@ static void draw_primitive(void)
     s_gpu.draws++;
     if (pb_verbose() && (s_gpu.draws % 200) == 0)
         fprintf(stderr, "  [GPU] draw #%u\n", s_gpu.draws);
+    {   /* hp1-xbox-port: RECOMP_DRAW_TRACE=<first>,<n>: one line per draw from
+         * draw #first -- primitive, indices, attribute 0 and the first vertex. */
+        static int on = -1;
+        static uint32_t first, n;
+        if (on < 0) {
+            const char *e = getenv("RECOMP_DRAW_TRACE");
+            on = e != NULL;
+            if (on && sscanf(e, "%u,%u", &first, &n) != 2) { first = 0; n = 200; }
+        }
+        if (on && s_gpu.draws >= first && s_gpu.draws < first + n) {
+            float p[4] = {0};
+            int ok = fetch_attr(&s_gpu.attr[0], s_gpu.idx[0], p);
+            fprintf(stderr, "[draw] #%u prim %u n %u xform %u a0 off %08X stride %u type %u ok %d"
+                            " v0 (%.3f %.3f %.3f %.3f) surf %08X\n",
+                    s_gpu.draws, s_gpu.prim, s_gpu.idx_count, s_gpu.xform_mode,
+                    s_gpu.attr[0].offset, s_gpu.attr[0].stride, s_gpu.attr[0].type, ok,
+                    p[0], p[1], p[2], p[3], s_gpu.color_offset);
+        }
+    }
     s_gpu.verts += s_gpu.idx_count;
 
     /* How many batches carry coordinates at all, and what range they span.

@@ -697,6 +697,26 @@ BOOL xbox_translate_path(const char* xbox_path, xbox_host_char* host_path_buf, D
     /* The request as the title made it; the [FILE] line after the open pairs
      * with it, the same as on the Win32 backend. */
     fprintf(stderr, "  [PATH] %s\n", xbox_path);
+    {   /* hp1-xbox-port: RECOMP_PATH_STACK=<substring>: the guest call chain of
+         * every open whose path contains it. */
+        static const char *want = (const char *)1;
+        if (want == (const char *)1) want = getenv("RECOMP_PATH_STACK");
+        if (want && *want && strstr(xbox_path, want)) {
+            extern void print_guest_state(void);
+            extern _Thread_local uint32_t g_esp; extern ptrdiff_t xbox_GetMemoryOffset(void);
+            extern uint32_t g_xbox_code_lo, g_xbox_code_hi;
+            const uint32_t *sp = (const uint32_t *)((uintptr_t)xbox_GetMemoryOffset() + g_esp);
+            int i, shown = 0;
+            print_guest_state();
+            fprintf(stderr, "  [PATH] return addresses on this thread's stack:");
+            for (i = 0; i < 400 && shown < 16; i++)
+                if (sp[i] > g_xbox_code_lo && sp[i] < g_xbox_code_hi) {
+                    fprintf(stderr, " %08X", sp[i]);
+                    shown++;
+                }
+            fprintf(stderr, "\n");
+        }
+    }
 
     {
         int digit = xbox_partition_device_digit(xbox_path, 0);

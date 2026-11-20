@@ -890,6 +890,8 @@ static void pending_start_flush(DWORD creator)
     ReleaseSRWLockExclusive(&g_pending_lock);
 }
 
+static uint32_t s_last_spawn_tib;   /* the TIB bridge_spawn_thread gave its thread */
+
 static HANDLE bridge_spawn_thread(recomp_func_t fn, uint32_t ctx1,
                                   uint32_t ctx2, uint32_t stack_top,
                                   int create_suspended)
@@ -901,6 +903,7 @@ static HANDLE bridge_spawn_thread(recomp_func_t fn, uint32_t ctx1,
     if (!s) return NULL;
     s->fn = fn; s->ctx1 = ctx1; s->ctx2 = ctx2; s->stack_top = stack_top;
     s->tib = xbox_AllocThreadTib();
+    s_last_spawn_tib = s->tib;   /* hp1-xbox-port: PsCreateSystemThreadEx's ThreadId */
 
     th = CreateThread(NULL, 0, bridge_thread_main, s, CREATE_SUSPENDED, NULL);
     /* Registered now, not when it first runs: the creator sets its priority
@@ -981,6 +984,12 @@ static void bridge_PsCreateSystemThreadEx(void)
     if (xbox_handle_ptr) {
         BRIDGE_MEM32(xbox_handle_ptr) = 0xBEEF0001;  /* fake handle */
     }
+    /* hp1-xbox-port (as MiddleDucky/HP-PS-Xbox-Recomp): ThreadId, the id the
+     * thread's GetCurrentThreadId will read from its KTHREAD (+0x12C). XAPI
+     * keys its per-thread table on it; never written, HP1's loader thread
+     * found no entry and built every cutscene path from a NULL directory. */
+    if (STACK_ARG(4) && is_first_call)
+        BRIDGE_MEM32(STACK_ARG(4)) = 0x100u;
 
     /* Call the start routine synchronously through the recomp dispatch.
      * Xbox thread start routines receive two parameters:
@@ -1050,6 +1059,11 @@ static void bridge_PsCreateSystemThreadEx(void)
                     HANDLE th = bridge_spawn_thread(fn, start_context1,
                                                     start_context2, stack_top,
                                                     (uint8_t)STACK_ARG(7));
+                    if (STACK_ARG(4) && th && s_last_spawn_tib) {
+                        uint32_t kt = BRIDGE_MEM32(s_last_spawn_tib + 0x28);
+                        if (kt)
+                            BRIDGE_MEM32(STACK_ARG(4)) = BRIDGE_MEM32(kt + 0x12C);
+                    }
                     fprintf(stderr, "  [KERNEL] PsCreateSystemThreadEx: spawned "
                             "worker 0x%08X (ctx=0x%08X, stack top 0x%08X)\n",
                             start_routine, start_context1, stack_top);

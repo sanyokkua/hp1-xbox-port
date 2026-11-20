@@ -26,6 +26,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 #include <math.h>
 
 /* The generated register model (g_eax/g_esp are thread-local there) and the
@@ -377,6 +378,74 @@ void sub_001AFCF0(void)
     esp += 4;
 }
 
+/* ── Debug: which resource a load wait is waiting for (HP1_LOAD_TRACE=1) ──
+ *
+ * sub_001726E0(item), cdecl: looks up [item+0x30] with sub_001686B0 and
+ * returns 1 once it is resident; the load-wait loop (0x000D4277, a loading
+ * screen per frame) runs until every item of the list says so. Once a second
+ * this prints an item that still says 0, with the first bytes of its
+ * descriptor and any string they point at. */
+extern void sub_001726E0_gen(void);
+
+static void load_trace_dump(uint32_t va, const char *what)
+{
+    int k;
+    fprintf(stderr, "[load]   %s %08X:", what, va);
+    if (va < 0x10000u || va >= 0x84000000u) { fprintf(stderr, " (not RAM)\n"); return; }
+    for (k = 0; k < 16; k++) fprintf(stderr, " %08X", MEM32(va + 4u * k));
+    fprintf(stderr, "\n");
+    for (k = 0; k < 16; k++) {
+        uint32_t p = MEM32(va + 4u * k);
+        if (p >= 0x10000u && p < 0x84000000u) {
+            const char *str = (const char *)XBOX_PTR(p);
+            int n = 0;
+            while (n < 48 && str[n] >= 0x20 && str[n] < 0x7F) n++;
+            if (n >= 4 && (str[n] == 0))
+                fprintf(stderr, "[load]     +%02X -> \"%.*s\"\n", k * 4, n, str);
+        }
+    }
+}
+
+void sub_001726E0(void)
+{
+    static int on = -1;
+    static time_t last;
+    uint32_t item = MEM32(esp + 4);
+    if (on < 0) {
+        const char *e = getenv("HP1_LOAD_TRACE");
+        on = e && *e == '1';
+    }
+    sub_001726E0_gen();
+    if (on && (eax & 0xFF) == 0 && time(NULL) != last) {
+        last = time(NULL);
+        fprintf(stderr, "[load] waiting for item %08X\n", item);
+        load_trace_dump(item, "item");
+        load_trace_dump(MEM32(item + 0x30), "res");
+    }
+}
+
+/* Debug: archive (.hog) lookups, sub_00184950(archive, name, len?) cdecl
+ * (HP1_HOG_TRACE=<substring of the name>): the archive's first fields and
+ * name, the name asked for and the entry it returned. */
+extern void sub_00184950_gen(void);
+void sub_00184950(void)
+{
+    static const char *want = (const char *)1;
+    uint32_t arc = MEM32(esp + 4), name = MEM32(esp + 8), a3 = MEM32(esp + 12);
+    if (want == (const char *)1) want = getenv("HP1_HOG_TRACE");
+    sub_00184950_gen();
+    if (want && name >= 0x10000u && name < 0x84000000u
+            && strstr((const char *)XBOX_PTR(name), want)) {
+        static int n;
+        if (n++ < 40) {
+            uint32_t an = MEM32(arc);
+            fprintf(stderr, "[hog] lookup \"%.60s\" (a3 %08X) in archive %08X [0]=%08X%s%.40s count %u -> %08X\n",
+                    (const char *)XBOX_PTR(name), a3, arc, an, an >= 0x10000u && an < 0x84000000u ? " " : "",
+                    an >= 0x10000u && an < 0x84000000u ? (const char *)XBOX_PTR(an) : "", MEM32(arc + 0x14), eax);
+        }
+    }
+}
+
 /*
  * Return a function pointer to override the given Xbox VA, or NULL
  * to fall through to the auto-generated dispatch table.
@@ -506,6 +575,7 @@ void recomp_icall_not_code_log(uint32_t va)
  * RECOMP_UNIMPL_TRAP=1 aborts at the first hit, at the guest address of the
  * cause rather than wherever the damage surfaces. */
 #include <stdlib.h>
+#include <time.h>
 
 void recomp_unimpl(const char *text, uint32_t va)
 {

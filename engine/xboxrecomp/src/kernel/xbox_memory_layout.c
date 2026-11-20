@@ -2563,6 +2563,9 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
         #define FAKE_RWDATA_VA  0x00700000  /* RW engine data area (in BSS) */
 
         MEM32_INIT(XBOX_FS_BASE + 0x28, FAKE_TLS_VA);
+        /* hp1-xbox-port: the main thread's id (ETHREAD.UniqueThread, +0x12C),
+         * which XAPI's GetCurrentThreadId reads; see xbox_AllocThreadTib. */
+        MEM32_INIT(FAKE_TLS_VA + 0x12C, 0x100u);
         /* TLS[0x28] = pointer to RW data area */
         MEM32_INIT(FAKE_TLS_VA + 0x28, FAKE_RWDATA_VA);
 
@@ -3358,6 +3361,23 @@ uint32_t xbox_AllocThreadTib(void)
     *(uint32_t *)TIB_VA(tib + 0x00) = 0xFFFFFFFFu;   /* own SEH chain    */
     *(uint32_t *)TIB_VA(block)      = thread_data;   /* slot 0           */
     *(uint32_t *)TIB_VA(tib + 0x04) = block + total; /* fs:[4], see above*/
+
+    /* hp1-xbox-port (from MiddleDucky/HP-PS-Xbox-Recomp, MIT): its own
+     * KTHREAD stand-in at fs:[0x28], a copy of the main thread's, with its own
+     * id at +0x12C (ETHREAD.UniqueThread), which XAPI's GetCurrentThreadId
+     * reads. Every thread shared the main thread's stand-in, so every thread
+     * had one id: HP1 keys its per-thread heap state on the id, and its loader
+     * and main threads then shared it. */
+    {
+        static uint32_t next_id = 0x100;
+        uint32_t main_kthread = *(uint32_t *)TIB_VA(XBOX_TIB_MAIN + 0x28);
+        uint32_t kthread = xbox_HeapAlloc(0x200u, 16);
+        if (kthread && main_kthread) {
+            memcpy(TIB_VA(kthread), TIB_VA(main_kthread), 0x200u);
+            *(uint32_t *)TIB_VA(kthread + 0x12C) = __atomic_add_fetch(&next_id, 4, __ATOMIC_RELAXED);
+            *(uint32_t *)TIB_VA(tib + 0x28) = kthread;
+        }
+    }
 
     return tib;
     #undef TIB_VA
