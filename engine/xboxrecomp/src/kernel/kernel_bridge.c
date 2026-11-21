@@ -10572,6 +10572,13 @@ void xbox_kernel_bridge_init(void)
             if (!(current & 0x80000000)) {
                 continue;            /* NULL separator or ordinary data */
             }
+            /* Kernel ordinals end below 512. HP1's table follows the XPP section's
+             * code, whose bytes (call rel32 ...) have the top bit set too: taken as
+             * thunks they were seven "ordinals" like 1230750603 and their code bytes
+             * were overwritten. */
+            if ((current & 0x7FFFFFFFu) == 0 || (current & 0x7FFFFFFFu) >= 512) {
+                continue;
+            }
             slot = g_thunk_table_count + i;   /* park these above the main run */
             if (slot >= XBOX_KERNEL_THUNK_TABLE_SIZE) {
                 break;
