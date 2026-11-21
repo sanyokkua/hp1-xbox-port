@@ -20,10 +20,6 @@
   "note": "HP-PS-Xbox-Recomp icall seed; also found by the int3-gap scan"
  },
  {
-  "start": "0x000E3020",
-  "note": "int3-gap scan: function start not lifted"
- },
- {
   "start": "0x000C9670",
   "note": "HP-PS-Xbox-Recomp icall seed 0xC9680 (PAL) on NTSC"
  },

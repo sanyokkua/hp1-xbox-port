@@ -743,20 +743,32 @@ static void stop_speech(void)
  * two pad actions held ([0x356C04], [0x356C34] in the action table) and the
  * cut allowed by [0x329DB4 + cut id] (only cuts already seen), it sets
  * [0x33FF34] and the cut ends at its next update (sub_000D42F0); cut 0x28 is
- * never skipped. Skip Cutscenes answers "pressed and allowed" once for every cut. */
+ * never skipped. Skip Cutscenes answers "pressed and allowed" once for every cut,
+ * 0x28 included (its end path in sub_000D4660 handles it). */
 extern void sub_000D1550_gen(void);
 static int skip_cutscenes_on(void);
 void sub_000D1550(void)
 {
     /* Once per cut, as a button press is: each "pressed" restarts the cut's
      * 0.5 s fade-out (sub_000DC7B0), and the cut ends only when it is done. */
+    /* The cut update asks twice in one update for cut 0x28 (0xD46BF, then 0xD46FF:
+     * both must say pressed for its fade-out to start), so a "pressed" holds for the
+     * rest of the tick it was given in ([0x3565C4] counts ticks). */
+    static uint32_t pressed_tick = 0xFFFFFFFFu;
+    if (skip_cutscenes_on() && MEM8(0x0033FF34u) && pressed_tick == MEM32(0x003565C4u)) {
+        eax = (eax & ~0xFFu) | 1u;
+        esp += 4;
+        return;
+    }
     if (skip_cutscenes_on() && !MEM8(0x0033FF34u)) {
         uint32_t id = MEM32(0x0033FF14u);
         static uint32_t told = 0xFFFFFFFFu;
-        if (id != 0x28u) {
-            MEM8(0x0033FF34u) = 1;
-            if (told != id) { told = id; fprintf(stderr, "[cutscene] cut %u skipped (Skip Cutscenes)\n", id); }
-        }
+        pressed_tick = MEM32(0x003565C4u);
+        /* Cut 0x28 too (the arrival: boats, sorting, Great Hall; four parts), which the
+         * title never lets a player skip. Answering "pressed" without the flag, as the
+         * first version did for it, restarted the fade every frame: 90 s of black. */
+        MEM8(0x0033FF34u) = 1;
+        if (told != id) { told = id; fprintf(stderr, "[cutscene] cut %u skipped (Skip Cutscenes)\n", id); }
         eax = (eax & ~0xFFu) | 1u;
         esp += 4;
         return;
@@ -795,9 +807,35 @@ static void cutscene_skip_tick(void)
 /* The game tick (see Skip Cutscenes above), run HP1_FF_TICKS times while a
  * letterboxed scene is fast-forwarded. */
 extern void sub_00140CE0_gen(void);
+extern void sub_00145B30(void);
+/* Debug: HP1_START_LEVEL=<n> -- once the first level has played 3 s, load level n
+ * with the title's own loader, sub_00145B30(level) (what the script command StartLevel
+ * calls; [0x356CE4] is the level in play, names at 0x21BB90 from 6: 7 night0, 71
+ * night0intro = the arrival with the boats and night cuts, 32.. the hpmNN cuts). */
+static void start_level_tick(void)
+{
+    static int want = -1;
+    float gt;
+    if (want < 0) {
+        const char *e = getenv("HP1_START_LEVEL");
+        want = e ? atoi(e) : 0;
+    }
+    memcpy(&gt, (const void *)XBOX_PTR(0x003565B8u), 4);
+    if (want >= 6 && want < 0x4C && MEM32(0x00356CE4u) >= 6 && gt > 3.0f) {
+        uint32_t sa = eax, sc = ecx, sd = edx, sb = ebx, ss = esi, sdi = edi, ssp = esp;
+        fprintf(stderr, "[level] loading level %d (HP1_START_LEVEL) from %u\n", want, MEM32(0x00356CE4u));
+        PUSH32(esp, (uint32_t)want);
+        PUSH32(esp, 0x00145B30u); RECOMP_ABI_CALL(0x00145B30u, sub_00145B30);
+        eax = sa; ecx = sc; edx = sd; ebx = sb; esi = ss; edi = sdi; esp = ssp;
+        want = 0;
+        if (getenv("HP1_NOSKIP_AFTER_LEVEL"))  /* debug: watch the level's own cuts unskipped */
+            hp1_skip_cutscenes = 0;
+    }
+}
 void sub_00140CE0(void)
 {
     int k;
+    start_level_tick();
     for (k = s_cutscene_ff ? ff_ticks() : 1; k > 0; k--) {
         uint32_t ssp = esp;
         sub_00140CE0_gen();

@@ -44,6 +44,9 @@ static int   s_gamma_on, s_ao_on, s_post_debug;
 static float s_bloom_k;
 /* s_gamma_v (exponent, tint rgb), s_present_pipe: declared in nv2a_metal.m */
 static float s_ao_near = 0.5f, s_ao_far = 10000.0f, s_ao_fade_m = 60.0f;
+/* NFSU2_POST_MIN_DRAWS: depth-tested draws that make a 3D scene (default 150, NFS's
+ * cities; HP1's rooms have 80-170 and set 40); it stays a scene down to 40 % of it. */
+static uint32_t s_post_min = 150;
 
 static id<MTLRenderPipelineState> s_ao_pipe, s_aoblur_pipe, s_bright_pipe, s_blur_pipe, s_comp_pipe;
 static id<MTLTexture> s_post_src, s_post_ao, s_post_ao2, s_post_b0, s_post_b1;
@@ -254,6 +257,7 @@ static void post_settings(void)
     if ((e = getenv("NFSU2_AO_NEAR"))) s_ao_near = (float)atof(e);
     if ((e = getenv("NFSU2_AO_FAR"))) s_ao_far = (float)atof(e);
     if ((e = getenv("NFSU2_AO_FADE"))) s_ao_fade_m = (float)atof(e);
+    if ((e = getenv("NFSU2_POST_MIN_DRAWS")) && atoi(e) > 0) s_post_min = (uint32_t)atoi(e);
     fprintf(stderr, "[post] gamma %s, ambient occlusion %s, bloom %.2f%s\n",
             s_gamma_v[0] == 1.0f ? "original" : s_gamma_v[0] < 1.0f ? "modern" : "warm",
             s_ao_on ? "on" : "off", s_bloom_k, s_post_debug ? " (debug: occlusion only)" : "");
@@ -398,12 +402,12 @@ static void post_scene_hook(MtSurf *s, MtDepth *d, const uint32_t *r)
         if (s == s_scene) {
             s_scene_draws++;
             s_scene_d = d;
-        } else if (s->pw * 10 >= s_post_pw * 9 && s_scene_draws < 150) {
+        } else if (s->pw * 10 >= s_post_pw * 9 && s_scene_draws < s_post_min) {
             s_scene = s; s_scene_d = d; s_scene_draws = 1;
         }
         return;
     }
-    if (s_scene && s_scene_draws >= (s_post_active ? 60u : 150u)) {
+    if (s_scene && s_scene_draws >= (s_post_active ? s_post_min * 2 / 5 : s_post_min)) {
         if (!s_post_active)
             s_post_fade = 0.0f;
         s_post_active = 1;

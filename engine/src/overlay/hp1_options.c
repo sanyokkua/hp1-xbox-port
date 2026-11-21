@@ -98,6 +98,18 @@ static const char *const k_kbd[] = { "Without a controller", "Always", "Off" };
 static const char *const k_kbd_v[] = { "1", "2", "0" };
 static void apply_kbd(int c, int at_start) { env("NFSU2_KEYBOARD", k_kbd_v[c], at_start); }
 
+extern void nv2a_mtl_post_reload(void);
+static const char *const k_fx[] = { "Bloom", "Bloom + Ambient Occlusion", "Off" };
+static const char *const k_fx_v[] = { "bloom", "ssao", "off" };
+static void apply_fx(int c, int at_start)
+{
+    env("NFSU2_POST_MIN_DRAWS", "40", at_start);   /* HP1's rooms: 80-170 depth-tested draws */
+    env("NFSU2_AO", c == 1 ? "1" : "0", at_start);
+    env("NFSU2_BLOOM", c == 2 ? "0" : "0.35", at_start);
+    if (!at_start)
+        nv2a_mtl_post_reload();
+}
+
 /* Tweaks */
 static void apply_skip_logos(int c, int at_start) { env("HP1_SKIP_LOGOS", c ? "1" : "0", at_start); }
 extern volatile int hp1_skip_cutscenes;  /* recomp_manual.c */
@@ -148,6 +160,9 @@ static const OverlayOption k_options[] = {
     { "Graphics", "Anisotropic Filtering", "Sharper floors and walls at an angle.",
       "Floors, walls and the ground seen at an angle: at once.",
       CHOICES(k_aniso), 4, 0, "aniso", k_aniso_v, apply_aniso },
+    { "Graphics", "Effects", "Bloom on bright lights; ambient occlusion darkens corners and contacts "
+      "(costs GPU time at high scales).", "3D scenes: at once. Not the menus, books or movies.",
+      CHOICES(k_fx), 0, 0, "effects", k_fx_v, apply_fx },
     { "Graphics", "Gamma", "The picture's brightness curve: the Xbox's, a brighter one for modern "
       "displays, or a warmer one.", "The whole picture, menus and movies too: at once.",
       CHOICES(k_gamma), 0, 0, "gamma", k_gamma_v, apply_gamma },
