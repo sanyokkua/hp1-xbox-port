@@ -426,6 +426,40 @@ void sub_001726E0(void)
     }
 }
 
+/* Debug: HP1_SCRIPT_TRACE=1 -- what a level script waits on. sub_0014D790(ctx)
+ * runs a script's commands in order from [ctx+0x18] (index into the script
+ * [ctx+0x10]: count word at +6, the command list at [+0x28], 8 bytes each, the
+ * table index a word at +0); a command answering 0 holds the script to the next
+ * frame. The command table [0x356FB0] has 0x48-byte entries, the name at +0.
+ * Printed when a script's held command changes, with the letterbox state. */
+extern void sub_0014D790_gen(void);
+void sub_0014D790(void)
+{
+    static int on = -1;
+    uint32_t ctx = MEM32(esp + 4);
+    if (on < 0) { const char *e = getenv("HP1_SCRIPT_TRACE"); on = e && *e == '1'; }
+    sub_0014D790_gen();
+    if (on && ctx) {
+        static uint32_t last_ctx[64], last_cmd[64];
+        uint32_t scr = MEM32(ctx + 0x10), idx = MEM32(ctx + 0x18), k, slot = 64;
+        if (scr && idx < MEM16(scr + 6)) {
+            uint32_t ti = MEM16(MEM32(scr + 0x28) + idx * 8u);
+            uint32_t entry = MEM32(0x00356FB0u) + ti * 0x48u;
+            for (k = 0; k < 64; k++) if (last_ctx[k] == ctx || !last_ctx[k]) { slot = k; break; }
+            if (slot < 64 && (last_ctx[slot] != ctx || last_cmd[slot] != (idx << 16 | ti))) {
+                last_ctx[slot] = ctx; last_cmd[slot] = idx << 16 | ti;
+                struct timespec ts;
+                float gt;
+                clock_gettime(CLOCK_MONOTONIC, &ts);
+                memcpy(&gt, (const void *)XBOX_PTR(0x003565B8u), 4);
+                fprintf(stderr, "[script] %7.2f s game %8.2f ctx %08X held at #%u %.32s (letterbox %u, speech %u)\n",
+                        ts.tv_sec + ts.tv_nsec / 1e9, gt, ctx, idx,
+                        (const char *)XBOX_PTR(entry), MEM32(0x0032E224u), MEM32(0x00331798u));
+            }
+        }
+    }
+}
+
 /* Debug: archive (.hog) lookups, sub_00184950(archive, name, len?) cdecl
  * (HP1_HOG_TRACE=<substring of the name>): the archive's first fields and
  * name, the name asked for and the entry it returned. */
@@ -607,19 +641,33 @@ void sub_001F5064(void)
 }
 
 /* ── Skip Cutscenes (overlay Tweaks, HP1_SKIP_CUTSCENES=1) ───────────────
- * The game has no skip: its story scenes are level scripts. While one plays the
- * letterbox is up: [0x32E224] is 2 (bars coming in) or 1 (in), set by the
- * script command setletterbox (0x4CAD0 -> 0x2A5A0 on, 0x2A5F0 off: 3, then 0).
- * Game time is frames counted ([0x3565C4] / [0x21B7D8], sub_00140F50), so the
- * scene is fast-forwarded: the vblank runs 8x faster (xbox_vblank_turbo; 16x starved the game: 960 interrupts a second), the
- * renderer drops its frame cap and draws and shows one frame in 8 (nv2a_mtl_turbo), the
- * sound is muted, and a line of speech that plays is stopped with the game's
- * own stop (0x4F5F0: frees the stream and sound, state [0x331798] to 0), as
- * scenes wait for their lines. Checked once a frame from the pad read. */
+ * Story scenes come two ways. Cuts (cut/hpmNN.hog sub-levels) have the game's
+ * own skip, answered below (sub_000D1550). Scenes inside a level are level
+ * scripts with the letterbox up: [0x32E224] is 2 (bars coming in) or 1 (in),
+ * set by the script command setletterbox (0x4CAD0 -> 0x2A5A0 on, 0x2A5F0 off:
+ * 3, then 0). They have no skip, so they are fast-forwarded: their commands
+ * hold on game time (Wait: [0x3565B8], frames counted by the tick
+ * sub_00140CE0 over [0x21B7D8]), on speech (WaitForSpeech: [0x331798] != 0) or
+ * on animations, all advanced by the tick. The game ticks twice a frame; while
+ * such a scene plays each tick runs HP1_FF_TICKS times (8), so a 15 s scene
+ * passes in about 2 s at full frame rate. Sound is muted and a line of speech is
+ * stopped with the game's own stop (0x4F5F0: frees the stream and sound, state
+ * [0x331798] to 0). (The first version ran the vblank 8x and drew one frame in
+ * 8: the game loop is not paced by the vblank, so the scene kept its length and
+ * only the frame rate dropped.) Checked once a frame from the pad read. */
 #define HP1_LETTERBOX     0x0032E224u
 #define HP1_SPEECH_STATE  0x00331798u
-extern volatile int xbox_vblank_turbo, nv2a_mtl_turbo;
 extern void xa2_set_mute(int on);
+static int s_cutscene_ff;               /* a letterboxed scene is being fast-forwarded */
+static int ff_ticks(void)               /* how much faster: HP1_FF_TICKS, 8 */
+{
+    static int n = -1;
+    if (n < 0) {
+        const char *e = getenv("HP1_FF_TICKS");
+        n = e && atoi(e) > 0 ? atoi(e) : 8;
+    }
+    return n;
+}
 static void stop_speech(void)
 {
     uint32_t sa = eax, sc = ecx, sd = edx, sb = ebx, ss = esi, sdi = edi, ssp = esp;
@@ -668,17 +716,50 @@ static void cutscene_skip_tick(void)
     int want = skip_cutscenes_on() && (lb == 1 || lb == 2);
     if (want != on) {
         on = want;
-        xbox_vblank_turbo = on ? 8 : 1;
-        nv2a_mtl_turbo = on;
+        s_cutscene_ff = on;
         xa2_set_mute(on);
         fprintf(stderr, "[cutscene] %s\n", on ? "fast-forward (Skip Cutscenes)" : "back to normal speed");
     }
-    if (on && MEM32(HP1_SPEECH_STATE) == 2u) {
+    if (on && MEM32(HP1_SPEECH_STATE) != 0u) {
         static int told;
         if (told++ < 50)
             fprintf(stderr, "[cutscene] line of speech stopped\n");
         stop_speech();
     }
+}
+
+/* The game tick (see Skip Cutscenes above), run HP1_FF_TICKS times while a
+ * letterboxed scene is fast-forwarded. */
+extern void sub_00140CE0_gen(void);
+void sub_00140CE0(void)
+{
+    int k;
+    for (k = s_cutscene_ff ? ff_ticks() : 1; k > 0; k--) {
+        uint32_t ssp = esp;
+        sub_00140CE0_gen();
+        if (k > 1) esp = ssp;
+    }
+}
+
+/* The wand shuffle in Ollivanders (script command muddlewands, 0x4CB30, holds
+ * until [0x340291] is 2) is animated per drawn frame, not per tick: the frame
+ * driver sub_000D5760 updates each of the three boxes with sub_000D4EF0(box),
+ * stepping by the frame time [0x21B7DC] (a constant the title only reads). While
+ * a scene is fast-forwarded the step is HP1_FF_TICKS times longer for this
+ * update only. */
+extern void sub_000D4EF0_gen(void);
+void sub_000D4EF0(void)
+{
+    if (s_cutscene_ff) {
+        float dt, fast;
+        memcpy(&dt, (const void *)XBOX_PTR(0x0021B7DCu), 4);
+        fast = dt * (float)ff_ticks();
+        memcpy((void *)XBOX_PTR(0x0021B7DCu), &fast, 4);
+        sub_000D4EF0_gen();
+        memcpy((void *)XBOX_PTR(0x0021B7DCu), &dt, 4);
+        return;
+    }
+    sub_000D4EF0_gen();
 }
 
 /* XInputGetState(hDevice, pState): dwPacketNumber, then XINPUT_GAMEPAD
@@ -972,6 +1053,8 @@ extern void sub_00164460_gen(void);
 void sub_00164460(void)
 {
     uint32_t name = MEM32(esp + 4u);   /* the name, cdecl argument 0 */
+    if (name)
+        fprintf(stderr, "[movie] %s\n", (const char *)XBOX_PTR(name));
     if (name && skip_logos()) {
         const char *n = (const char *)XBOX_PTR(name);
         if (!strcasecmp(n, "movies/splashwb.thp") || !strncasecmp(n, "movies/ea_", 10)) {

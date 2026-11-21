@@ -158,8 +158,8 @@ static const OverlayOption k_options[] = {
       "The logo movies before the title screen: from the next start.",
       CHOICES(k_onoff), 0, 1, "skip_logos", k_01, apply_skip_logos },
 
-    { "Tweaks", "Skip Cutscenes", "Story scenes run fast-forward and silent (the game has no skip): "
-      "a few seconds instead of minutes.", "Every story scene with the black bars: at once.",
+    { "Tweaks", "Skip Cutscenes", "Story scenes are skipped; scenes inside a level play "
+      "fast-forward and silent for a second or two.", "Every story scene with the black bars: at once.",
       CHOICES(k_onoff), 0, 0, "skip_cutscenes", k_01, apply_skip_cutscenes },
 
     { "Advanced", "Performance Overlay", "Frames per second and the slowest frame, top left "

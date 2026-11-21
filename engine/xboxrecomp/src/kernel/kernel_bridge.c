@@ -2245,6 +2245,16 @@ static void bridge_NtWaitForSingleObjectEx(void)
             XBOX_TO_NATIVE(timeout_ptr));
         QueryPerformanceCounter(&b);
         QueryPerformanceFrequency(&f);
+        {   /* RECOMP_SLEEP_LOG=1: a main-thread wait of 1 s or more, with its callers */
+            static int log = -1;
+            double ms = (b.QuadPart - a.QuadPart) * 1000.0 / f.QuadPart;
+            if (log < 0) { const char *e = getenv("RECOMP_SLEEP_LOG"); log = e && *e == '1'; }
+            if (log && ms >= 1000.0)
+                fprintf(stderr, "[wait] main thread %.0f ms on %08X (timeout %s %lld ms) from %08X < %08X\n", ms,
+                        STACK_ARG(0), timeout_ptr ? "" : "none",
+                        timeout_ptr ? (long long)(-*(const int64_t *)XBOX_TO_NATIVE(timeout_ptr) / 10000) : 0LL,
+                        r1, r2);
+        }
         for (k = 0; k < 16; k++)
             if (!s_mw[k].n || (s_mw[k].r1 == r1 && s_mw[k].r2 == r2)) {
                 s_mw[k].r1 = r1;
@@ -2417,7 +2427,15 @@ static void bridge_KeDelayExecutionThread(void)
     uint32_t alertable    = STACK_ARG(1);
     uint32_t interval_ptr = STACK_ARG(2);
 
-
+    {   /* RECOMP_SLEEP_LOG=1: a guest sleep of 100 ms or more */
+        static int log = -1;
+        if (log < 0) { const char *e = getenv("RECOMP_SLEEP_LOG"); log = e && *e == '1'; }
+        if (log && interval_ptr) {
+            int64_t v = *(const int64_t *)XBOX_TO_NATIVE(interval_ptr);
+            if (v <= -1000000)
+                fprintf(stderr, "[sleep] %lld ms\n", (long long)(-v / 10000));
+        }
+    }
     g_eax = (uint32_t)xbox_KeDelayExecutionThread(
         (KPROCESSOR_MODE)wait_mode, (BOOLEAN)alertable,
         XBOX_TO_NATIVE(interval_ptr));

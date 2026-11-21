@@ -28,6 +28,13 @@ typedef struct {
     float   aa[2];              /* logical -> real pixels */
     int32_t xform;              /* 1 fixed-function, 0 pre-transformed */
     float   snap_y;             /* nv2a_snap's offset for y; surf[3] is x's */
+    /* Fixed-function texture coordinates (hp1-xbox-port: HP1's projected
+     * character shadow). Matrices as the title wrote them: out[i] = sum_j m[4i+j] * in[j]. */
+    float   mv[16];             /* model-view 0 (SET_MODEL_VIEW_MATRIX) */
+    float   tm[4][16];          /* texture matrix per stage (SET_TEXTURE_MATRIX) */
+    float   tp[4][4][4];        /* texgen planes per stage, S T R Q (SET_TEXGEN_PLANE) */
+    int32_t tg[4][4];           /* texgen mode per stage, S T R Q (0 off, 0x2400 eye, 0x2401 object) */
+    int32_t tme[4];             /* texture matrix enabled per stage */
 } Nv2aMslVs;
 
 typedef struct {

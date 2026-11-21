@@ -3368,7 +3368,9 @@ static void mtl_draw_raw_inner(const Nv2aRawBatch *b)
             for (k = 0; k < 4; k++) {
                 uint32_t base = (0x1B00u + k * 0x40u) / 4;
                 if (r[base + 3] & 0x40000000u)
-                    fprintf(stderr, " | t%u fmt %08X rect %08X", k, r[base + 1], r[base + 7]);
+                    fprintf(stderr, " | t%u fmt %08X rect %08X addr %08X gen %X%X%X%X mtx %u", k, r[base + 1], r[base + 7],
+                            r[base + 2], r[(0x3C0 + k * 16) / 4], r[(0x3C4 + k * 16) / 4], r[(0x3C8 + k * 16) / 4],
+                            r[(0x3CC + k * 16) / 4], r[(0x420 + k * 4) / 4]);
             }
             for (k = 0; k < 4; k += 3) {
                 float v[4] = { 0, 0, 0, 1 };
@@ -3516,6 +3518,21 @@ static void mtl_draw_raw_inner(const Nv2aRawBatch *b)
         vb.aa[0] = b->aa_sx > 0 ? b->aa_sx : 1.0f;
         vb.aa[1] = b->aa_sy > 0 ? b->aa_sy : 1.0f;
         vb.xform = b->xform == 1 ? 1 : 0;
+        if (vb.xform == 1) {
+            int k, c;
+            memcpy(vb.mv, &r[0x480 / 4], sizeof vb.mv);
+            for (k = 0; k < 4; k++) {
+                for (c = 0; c < 4; c++) {
+                    uint32_t g = r[(0x3C0 + k * 16 + c * 4) / 4];
+                    vb.tg[k][c] = (g == 0x2400 || g == 0x2401) ? (int32_t)g : 0;
+                }
+                vb.tme[k] = r[(0x420 + k * 4) / 4] != 0;
+                if (vb.tme[k])
+                    memcpy(vb.tm[k], &r[(0x6C0 + k * 64) / 4], sizeof vb.tm[k]);
+                if (vb.tg[k][0] | vb.tg[k][1] | vb.tg[k][2] | vb.tg[k][3])
+                    memcpy(vb.tp[k], &r[(0x840 + k * 64) / 4], sizeof vb.tp[k]);
+            }
+        }
         if (!s_vs_valid || memcmp(&vb, &s_vs_cur, sizeof vb)) {
             [s_enc setVertexBytes:&vb length:sizeof vb atIndex:NV2A_MSL_VS_BLOCK];
             s_vs_cur = vb;
