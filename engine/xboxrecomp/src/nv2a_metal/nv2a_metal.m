@@ -4035,8 +4035,8 @@ static void mtl_flip_inner(void)
             s_ft_dumped = 0;
             if (now - window_ns > 10000000000ull) { window_ns = now; lines = 0; }
             if (dt > 50000000ull && lines++ < 30)
-                fprintf(stderr, "[hitch] frame %u: %.0f ms -- %u programs compiled (%.0f ms),"
-                        " %u textures %.1f MB (%.0f ms), %u draws\n", s_frame, dt / 1e6,
+                fprintf(stderr, "[hitch] %.3f s frame %u: %.0f ms -- %u programs compiled (%.0f ms),"
+                        " %u textures %.1f MB (%.0f ms), %u draws\n", now / 1e9, s_frame, dt / 1e6,
                         s_hz_progs, s_hz_prog_ns / 1e6, s_hz_texs,
                         s_hz_tex_bytes / 1048576.0, s_hz_tex_ns / 1e6, s_hz_draws);
         }

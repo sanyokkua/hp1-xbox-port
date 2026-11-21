@@ -460,6 +460,31 @@ void sub_0014D790(void)
     }
 }
 
+/* Debug: HP1_XMV_TRACE=1 -- the movie decoder's GetNextFrame (sub_001C4198,
+ * stdcall: decoder, surface, &status, ...), each change of its result. */
+extern void sub_001C4198_gen(void);
+void sub_001C4198(void)
+{
+    static int on = -1;
+    uint32_t dec = MEM32(esp + 4), pst = MEM32(esp + 12);
+    if (on < 0) { const char *e = getenv("HP1_XMV_TRACE"); on = e && *e == '1'; }
+    sub_001C4198_gen();
+    if (on) {
+        static uint32_t last = 0xFFFFFFFFu;
+        static unsigned calls;
+        uint32_t st = pst ? MEM32(pst) : 0xEEu, key = st << 8 | (eax >> 24);
+        calls++;
+        if (key != last) {
+            struct timespec ts;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            last = key;
+            fprintf(stderr, "[xmv] %.3f s call %u: hr %08X status %u | +50 %08X +60 %08X +68 %08X +6C %08X +74 %08X\n",
+                    ts.tv_sec + ts.tv_nsec / 1e9, calls, eax, st, MEM32(dec + 0x50), MEM32(dec + 0x60),
+                    MEM32(dec + 0x68), MEM32(dec + 0x6C), MEM32(dec + 0x74));
+        }
+    }
+}
+
 /* Debug: archive (.hog) lookups, sub_00184950(archive, name, len?) cdecl
  * (HP1_HOG_TRACE=<substring of the name>): the archive's first fields and
  * name, the name asked for and the entry it returned. */
@@ -1053,8 +1078,11 @@ extern void sub_00164460_gen(void);
 void sub_00164460(void)
 {
     uint32_t name = MEM32(esp + 4u);   /* the name, cdecl argument 0 */
-    if (name)
-        fprintf(stderr, "[movie] %s\n", (const char *)XBOX_PTR(name));
+    if (name) {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        fprintf(stderr, "[movie] %.3f s %s\n", ts.tv_sec + ts.tv_nsec / 1e9, (const char *)XBOX_PTR(name));
+    }
     if (name && skip_logos()) {
         const char *n = (const char *)XBOX_PTR(name);
         if (!strcasecmp(n, "movies/splashwb.thp") || !strncasecmp(n, "movies/ea_", 10)) {
