@@ -485,6 +485,45 @@ void sub_001C4198(void)
     }
 }
 
+/* ── Skip Save Messages (overlay Tweaks, HP1_FAST_SAVES=1) ────────────────
+ * Around saving, loading and New Game the title shows its storage messages
+ * ("Saving... do not switch off") for a minimum time: it reads a stopwatch
+ * (sub_00162BE0(watch), ms since the watch was made on the TSC) in a busy loop
+ *     call 0x162BE0 / sub eax, <start> / add esp, 4 / cmp eax, 500|750 / jbe <loop>
+ * drawing nothing (17 such loops: 0x2B5A0.., 0x5141E, 0x5186F, 0x51AF0). With the
+ * option on, a call returning into that shape answers "long past" -- recognised
+ * from the code at the return address, so other stopwatch users keep their time. */
+volatile int hp1_fast_saves = -1;        /* the overlay's row sets it live; -1: HP1_FAST_SAVES */
+static int min_wait_loop_at(uint32_t ret)
+{
+    const uint8_t *c = (const uint8_t *)XBOX_PTR(ret);
+    uint32_t k, imm;
+    if (ret < 0x00011000u || ret >= 0x001F0000u || c[0] != 0x2B)    /* sub eax, r/m32 */
+        return 0;
+    for (k = 2; k < 8; k++)                                         /* past its operand */
+        if (c[k] == 0x83 && c[k + 1] == 0xC4 && c[k + 2] == 0x04 && c[k + 3] == 0x3D) {
+            memcpy(&imm, c + k + 4, 4);
+            return (imm == 500u || imm == 750u) && c[k + 8] == 0x76 && (int8_t)c[k + 9] < 0;
+        }
+    return 0;
+}
+extern void sub_00162BE0_gen(void);
+void sub_00162BE0(void)
+{
+    uint32_t ret = MEM32(esp);
+    if (hp1_fast_saves < 0) {
+        const char *e = getenv("HP1_FAST_SAVES");
+        hp1_fast_saves = e && *e == '1';
+    }
+    sub_00162BE0_gen();
+    if (hp1_fast_saves && min_wait_loop_at(ret)) {
+        static int told;
+        if (!told++)
+            fprintf(stderr, "[save] storage message wait skipped (Skip Save Messages)\n");
+        eax = 0x7FFFFFFFu;               /* minus any start: past 750 ms */
+    }
+}
+
 /* Debug: archive (.hog) lookups, sub_00184950(archive, name, len?) cdecl
  * (HP1_HOG_TRACE=<substring of the name>): the archive's first fields and
  * name, the name asked for and the entry it returned. */

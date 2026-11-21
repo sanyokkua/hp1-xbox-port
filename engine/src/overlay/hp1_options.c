@@ -109,6 +109,15 @@ static void apply_skip_cutscenes(int c, int at_start)
     hp1_skip_cutscenes = at_start ? (e && *e == '1') : c;
 }
 
+extern volatile int hp1_fast_saves;      /* recomp_manual.c */
+static void apply_fast_saves(int c, int at_start)
+{
+    const char *e;
+    env("HP1_FAST_SAVES", c ? "1" : "0", at_start);
+    e = getenv("HP1_FAST_SAVES");
+    hp1_fast_saves = at_start ? (e && *e == '1') : c;
+}
+
 /* Advanced */
 static void apply_fps_counter(int c, int at_start)
 {
@@ -161,6 +170,10 @@ static const OverlayOption k_options[] = {
     { "Tweaks", "Skip Cutscenes", "Story scenes are skipped; scenes inside a level play "
       "fast-forward and silent for a second or two.", "Every story scene with the black bars: at once.",
       CHOICES(k_onoff), 0, 0, "skip_cutscenes", k_01, apply_skip_cutscenes },
+
+    { "Tweaks", "Skip Save Messages", "No pause on the storage messages (\"do not switch off\") "
+      "when saving, loading or starting a new game.", "Saving, loading and New Game: at once.",
+      CHOICES(k_onoff), 0, 0, "fast_saves", k_01, apply_fast_saves },
 
     { "Advanced", "Performance Overlay", "Frames per second and the slowest frame, top left "
       "(also Cmd+Option+F).", "Top left of the screen: at once.",
