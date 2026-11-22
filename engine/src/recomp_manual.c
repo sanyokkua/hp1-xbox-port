@@ -444,10 +444,16 @@ static double now_s(void)
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec + ts.tv_nsec / 1e9;
 }
+static unsigned s_ff_gen;                /* a new fast-forward: the hold timers start again */
 static void ff_note_hold(uint32_t ctx)
 {
     static uint32_t c_ctx[16], c_cmd[16];
     static double c_t0[16];
+    static unsigned gen;
+    if (gen != s_ff_gen) {
+        gen = s_ff_gen;
+        memset(c_ctx, 0, sizeof c_ctx);
+    }
     uint32_t scr = MEM32(ctx + 0x10), idx = MEM32(ctx + 0x18), k, slot = 16, key;
     if (!scr || idx >= MEM16(scr + 6))
         return;
@@ -849,6 +855,7 @@ static void cutscene_skip_tick(void)
             static double t_on;
             if (on) {
                 t_on = now_s();
+                s_ff_gen++;
                 s_ff_hold_max = 0;
                 s_ff_hold_name[0] = 0;
                 fprintf(stderr, "[cutscene] fast-forward (Skip Cutscenes)\n");
