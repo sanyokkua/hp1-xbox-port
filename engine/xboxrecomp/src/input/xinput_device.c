@@ -13,6 +13,7 @@
 #include "xinput_xbox.h"
 #include <stdlib.h>
 #include <string.h>
+#include "stick_deadzone.h"
 
 /* ======================================================================== */
 #if defined(_WIN32)
@@ -387,6 +388,14 @@ DWORD xbox_InputGetState(DWORD dwPort, XBOX_INPUT_STATE *pState)
     pState->Gamepad.sThumbRX = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTX);
     pState->Gamepad.sThumbRY =
         (SHORT)(-1 - SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTY));
+    {   /* Pads rest off centre: a radial dead zone (stick_deadzone.h). */
+        int16_t lx = pState->Gamepad.sThumbLX, ly = pState->Gamepad.sThumbLY;
+        int16_t rx = pState->Gamepad.sThumbRX, ry = pState->Gamepad.sThumbRY;
+        stick_deadzone(&lx, &ly, STICK_DEADZONE);
+        stick_deadzone(&rx, &ry, STICK_DEADZONE);
+        pState->Gamepad.sThumbLX = lx; pState->Gamepad.sThumbLY = ly;
+        pState->Gamepad.sThumbRX = rx; pState->Gamepad.sThumbRY = ry;
+    }
     if (xbox_input_blocked)                  /* the overlay menu has the controllers */
         memset(&pState->Gamepad, 0, sizeof pState->Gamepad);
 
