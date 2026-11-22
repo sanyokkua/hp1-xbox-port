@@ -3627,6 +3627,18 @@ static void mtl_draw_raw(const Nv2aRawBatch *b)
     }
 }
 
+/* RECOMP_DRAW_LOG=<frame>[,n]: is f one of the logged frames (clears too). */
+static int s_dl_frame(uint32_t f)
+{
+    static int dl = -2, n = 1;
+    if (dl == -2) {
+        const char *e = getenv("RECOMP_DRAW_LOG");
+        dl = e ? atoi(e) : -1;
+        if (e && strchr(e, ',')) n = atoi(strchr(e, ',') + 1);
+    }
+    return dl >= 0 && (int)f >= dl && (int)f < dl + n;
+}
+
 static void mtl_clear(const Nv2aSurface *sf, const Nv2aRenderState *rs,
                       uint32_t flags, uint32_t argb, uint32_t zstencil)
 {
@@ -3668,6 +3680,11 @@ static void mtl_clear(const Nv2aSurface *sf, const Nv2aRenderState *rs,
             rect.height = d->ph - rect.y;
         if (!rect.width || !rect.height)
             return;
+        if (capturing() || s_dl_frame(s_frame))
+            fprintf(stderr, "[clr] f%u rt %08X %ux%u (stored %ux%u) depth %ux%u rect %lu,%lu %lux%lu flags %X argb %08X\n",
+                    s_frame, s->va, s->w, s->h, s->pw, s->ph, d ? d->pw : 0, d ? d->ph : 0,
+                    (unsigned long)rect.x, (unsigned long)rect.y, (unsigned long)rect.width,
+                    (unsigned long)rect.height, flags, argb);
         color = (flags & 0xF0) == 0xF0;
         if ((flags & 0xF0) && !color) {
             static int warned;
@@ -4160,6 +4177,20 @@ static void mtl_flip_inner(void)
         if (fxaa_on()) {
             snprintf(path, sizeof path, "%s%05u_fxaa.bmp", dump_prefix, s_frame);
             dump_fxaa(s, path);
+        }
+        {   /* RECOMP_GL_DUMP_SURF=<va>[,<va>...]: those render targets too (<prefix>NNNNN_<va>.bmp),
+             * e.g. a shadow map as the game left it this frame. */
+            const char *e = getenv("RECOMP_GL_DUMP_SURF");
+            while (e && *e) {
+                uint32_t va = (uint32_t)strtoul(e, NULL, 16);
+                MtSurf *t = surf_find(va);
+                if (t && t->tex) {
+                    snprintf(path, sizeof path, "%s%05u_%08X.bmp", dump_prefix, s_frame, va);
+                    dump_surface(t, path);
+                }
+                e = strchr(e, ',');
+                if (e) e++;
+            }
         }
     }
     VT("flip %u: surface %08X drew %d\n", s_frame, s ? s->va : 0, s_drew_any);

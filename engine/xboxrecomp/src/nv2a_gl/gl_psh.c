@@ -273,8 +273,14 @@ static void tex_fetch(Out *o, int t, uint32_t mode, const Nv2aPshKey *k)
             emit(o, "    vec4 T%d = vec4(0.0);\n", t);
         break;
     default: {                                       /* 2D (+ the rest, for now) */
-        emit(o, "    vec2 tc%d = (abs(vT%d.w) > 1e-8 && %d == 1) ? vT%d.xy / vT%d.w : vT%d.xy;\n",
-             t, t, mode == 1 ? 1 : 0, t, t, t);
+        /* Projected (PROJECT2D): s/q, t/q. Behind the projector (q <= 0) the divide
+         * mirrors the image back onto the scene: HP1's character shadows came back as
+         * long dark wedges across the floor behind the light. There the lookup goes
+         * out of the texture instead (the clamp gives the edge: no shadow). */
+        if (mode == 1)
+            emit(o, "    vec2 tc%d = vT%d.w > 1e-8 ? vT%d.xy / vT%d.w : vec2(-1.0);\n", t, t, t, t);
+        else
+            emit(o, "    vec2 tc%d = vT%d.xy;\n", t, t);
         emit(o, "    vec4 T%d = texture(t%d, tc%d * u_tscale[%d]);\n", t, t, t, t);
         break;
     }

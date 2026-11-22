@@ -433,12 +433,48 @@ void sub_001726E0(void)
  * frame. The command table [0x356FB0] has 0x48-byte entries, the name at +0.
  * Printed when a script's held command changes, with the letterbox state. */
 extern void sub_0014D790_gen(void);
+static int s_cutscene_ff;               /* a letterboxed scene is being fast-forwarded */
+/* While a scene is fast-forwarded: the script command that held a script longest
+ * (real time), printed if the scene still took over 4 s (what is not sped up). */
+static double s_ff_hold_max;
+static char s_ff_hold_name[33];
+static double now_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+static void ff_note_hold(uint32_t ctx)
+{
+    static uint32_t c_ctx[16], c_cmd[16];
+    static double c_t0[16];
+    uint32_t scr = MEM32(ctx + 0x10), idx = MEM32(ctx + 0x18), k, slot = 16, key;
+    if (!scr || idx >= MEM16(scr + 6))
+        return;
+    key = idx << 16 | MEM16(MEM32(scr + 0x28) + idx * 8u);
+    for (k = 0; k < 16; k++) if (c_ctx[k] == ctx || !c_ctx[k]) { slot = k; break; }
+    if (slot == 16) slot = ctx % 16u;
+    if (c_ctx[slot] != ctx || c_cmd[slot] != key) {
+        c_ctx[slot] = ctx; c_cmd[slot] = key; c_t0[slot] = now_s();
+        return;
+    }
+    if (now_s() - c_t0[slot] > s_ff_hold_max) {
+        uint32_t entry = MEM32(0x00356FB0u) + (key & 0xFFFFu) * 0x48u;
+        const char *nm = (const char *)XBOX_PTR(entry);
+        if (!strncmp(nm, "WaitLoadRoom", 12) || !strncmp(nm, "WaitCutEnd", 10))
+            return;                     /* the level's master script, through every scene */
+        s_ff_hold_max = now_s() - c_t0[slot];
+        snprintf(s_ff_hold_name, sizeof s_ff_hold_name, "%.32s", (const char *)XBOX_PTR(entry));
+    }
+}
 void sub_0014D790(void)
 {
     static int on = -1;
     uint32_t ctx = MEM32(esp + 4);
     if (on < 0) { const char *e = getenv("HP1_SCRIPT_TRACE"); on = e && *e == '1'; }
     sub_0014D790_gen();
+    if (s_cutscene_ff && ctx)
+        ff_note_hold(ctx);
     if (on && ctx) {
         static uint32_t last_ctx[64], last_cmd[64];
         uint32_t scr = MEM32(ctx + 0x10), idx = MEM32(ctx + 0x18), k, slot = 64;
@@ -722,7 +758,6 @@ void sub_001F5064(void)
 #define HP1_LETTERBOX     0x0032E224u
 #define HP1_SPEECH_STATE  0x00331798u
 extern void xa2_set_mute(int on);
-static int s_cutscene_ff;               /* a letterboxed scene is being fast-forwarded */
 static int ff_ticks(void)               /* how much faster: HP1_FF_TICKS, 8 */
 {
     static int n = -1;
@@ -785,6 +820,21 @@ static int skip_cutscenes_on(void)
     }
     return hp1_skip_cutscenes;
 }
+/* The frame step [0x21B7DC] (0.04 s, a constant the title only reads): what the
+ * game steps once per drawn frame, outside the tick, moves by it -- characters on
+ * a trajectory (Peeves on the Grand Staircase, followtrajectory), the wand
+ * shuffle in Ollivanders (muddlewands, sub_000D4EF0), ... While a scene is
+ * fast-forwarded it is HP1_FF_TICKS times longer; inside the tick, which already
+ * runs that many times, it is the normal step (sub_00140CE0 below). */
+#define HP1_FRAME_STEP    0x0021B7DCu
+static float s_frame_step;              /* the title's value, kept while it is changed */
+static void set_frame_step(float mul)
+{
+    float v;
+    if (s_frame_step == 0.0f) memcpy(&s_frame_step, (const void *)XBOX_PTR(HP1_FRAME_STEP), 4);
+    v = s_frame_step * mul;
+    memcpy((void *)XBOX_PTR(HP1_FRAME_STEP), &v, 4);
+}
 static void cutscene_skip_tick(void)
 {
     static int on;
@@ -793,8 +843,21 @@ static void cutscene_skip_tick(void)
     if (want != on) {
         on = want;
         s_cutscene_ff = on;
+        set_frame_step(on ? (float)ff_ticks() : 1.0f);
         xa2_set_mute(on);
-        fprintf(stderr, "[cutscene] %s\n", on ? "fast-forward (Skip Cutscenes)" : "back to normal speed");
+        {
+            static double t_on;
+            if (on) {
+                t_on = now_s();
+                s_ff_hold_max = 0;
+                s_ff_hold_name[0] = 0;
+                fprintf(stderr, "[cutscene] fast-forward (Skip Cutscenes)\n");
+            } else if (now_s() - t_on > 4.0 && s_ff_hold_name[0])
+                fprintf(stderr, "[cutscene] back to normal speed after %.1f s; slowest: %s held %.1f s\n",
+                        now_s() - t_on, s_ff_hold_name, s_ff_hold_max);
+            else
+                fprintf(stderr, "[cutscene] back to normal speed after %.1f s\n", now_s() - t_on);
+        }
     }
     if (on && MEM32(HP1_SPEECH_STATE) != 0u) {
         static int told;
@@ -836,32 +899,14 @@ void sub_00140CE0(void)
 {
     int k;
     start_level_tick();
-    for (k = s_cutscene_ff ? ff_ticks() : 1; k > 0; k--) {
+    if (!s_cutscene_ff) { sub_00140CE0_gen(); return; }
+    set_frame_step(1.0f);
+    for (k = ff_ticks(); k > 0; k--) {
         uint32_t ssp = esp;
         sub_00140CE0_gen();
         if (k > 1) esp = ssp;
     }
-}
-
-/* The wand shuffle in Ollivanders (script command muddlewands, 0x4CB30, holds
- * until [0x340291] is 2) is animated per drawn frame, not per tick: the frame
- * driver sub_000D5760 updates each of the three boxes with sub_000D4EF0(box),
- * stepping by the frame time [0x21B7DC] (a constant the title only reads). While
- * a scene is fast-forwarded the step is HP1_FF_TICKS times longer for this
- * update only. */
-extern void sub_000D4EF0_gen(void);
-void sub_000D4EF0(void)
-{
-    if (s_cutscene_ff) {
-        float dt, fast;
-        memcpy(&dt, (const void *)XBOX_PTR(0x0021B7DCu), 4);
-        fast = dt * (float)ff_ticks();
-        memcpy((void *)XBOX_PTR(0x0021B7DCu), &fast, 4);
-        sub_000D4EF0_gen();
-        memcpy((void *)XBOX_PTR(0x0021B7DCu), &dt, 4);
-        return;
-    }
-    sub_000D4EF0_gen();
+    set_frame_step((float)ff_ticks());
 }
 
 /* XInputGetState(hDevice, pState): dwPacketNumber, then XINPUT_GAMEPAD
