@@ -12,7 +12,7 @@ PREFIX="$(mkdir -p "${1:-$ROOT/build/deps}" && cd "${1:-$ROOT/build/deps}" && pw
 TARGET=15.0
 DOWNLOADS="$PREFIX/downloads"
 mkdir -p "$DOWNLOADS" "$PREFIX/lib" "$PREFIX/include" "$PREFIX/share/licenses"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/nfsu2-deps.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/hp1-deps.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
 # name | URL | SHA-256

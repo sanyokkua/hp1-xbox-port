@@ -6,7 +6,7 @@
 lift/     xboxrecomp's Python lifter (tools/ without outputs and tests, templates/), the engine's tools/regen.sh,
           config/seed_functions.json and src/recomp_manual.c (regen reads it to skip the hand-written functions)
 py/       capstone (BSD) from .venv: the lifter runs on the Command Line Tools' /usr/bin/python3
-lib/      the runtime objects of nfsu2_recomp (engine/src: the game's overrides and the Apple host) and the xboxrecomp static
+lib/      the runtime objects of hp1_recomp (engine/src: the game's overrides and the Apple host) and the xboxrecomp static
           libraries; link.txt = the build's link line without the lifted chunks (@KIT@ = the kit,
           @FW@ = the app's Frameworks); cflags.txt = the build's flags for the lifted chunks
 mac/build_game.sh lifts the player's default.xbe into gen/*.c, compiles it with clang and links (on their Mac).
@@ -40,7 +40,7 @@ for lic in glob.glob(os.path.join(os.path.dirname(cap), 'capstone-*.dist-info', 
         glob.glob(os.path.join(os.path.dirname(cap), 'capstone-*.dist-info', 'licenses', '*')):
     shutil.copy2(lic, os.path.join(kit, 'py', 'capstone', 'LICENSE.TXT'))
 
-cmds = subprocess.run(['ninja', '-C', build, '-t', 'commands', 'nfsu2_recomp'], capture_output=True,
+cmds = subprocess.run(['ninja', '-C', build, '-t', 'commands', 'hp1_recomp'], capture_output=True,
                       text=True, check=True).stdout.strip().splitlines()
 # the lifted chunks' compile flags: as the build, without its include paths and dependency/output options
 gen_cmd = shlex.split(next(c for c in cmds if '/gen/recomp_0000.c' in c))
@@ -64,7 +64,7 @@ for a in link[1:link.index('-o')] + args:
     if a.endswith('.o'):
         if '/gen/' in a:
             continue                      # the lifted chunks: built on the player's Mac
-        name = a.split('nfsu2_recomp.dir/')[-1].replace('/', '_')
+        name = a.split('hp1_recomp.dir/')[-1].replace('/', '_')
         shutil.copy2(os.path.join(build, a), os.path.join(kit, 'lib', name))
         objs.append('@KIT@/lib/' + name)
         continue

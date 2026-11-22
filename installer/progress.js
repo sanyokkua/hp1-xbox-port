@@ -8,7 +8,7 @@ function run(argv) {
   app.setActivationPolicy($.NSApplicationActivationPolicyRegular);
   const win = $.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(
     $.NSMakeRect(0, 0, 480, 120), $.NSWindowStyleMaskTitled, $.NSBackingStoreBuffered, false);
-  win.title = 'NFS Underground 2: installing';
+  win.title = "Harry Potter Sorcerer's Stone: installing";
   const label = $.NSTextField.labelWithString('Preparing');
   label.frame = $.NSMakeRect(20, 70, 440, 24);
   const bar = $.NSProgressIndicator.alloc.initWithFrame($.NSMakeRect(20, 35, 440, 20));

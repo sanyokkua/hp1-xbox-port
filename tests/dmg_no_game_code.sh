@@ -1,23 +1,23 @@
 #!/bin/bash
 # The players' DMG holds no game code and no game data. Fails on:
-#   - the disc's files by name (*.xbe, *.BIN, *.xmv, NFSUNDER, B3) or *.iso
+#   - the disc's files by name (*.xbe, *.hog, *.xmv, disk.txt) or *.iso
 #   - the lifted C or objects made from it (recomp_*.c but the engine's hand-written recomp_manual.c, recomp_*.o,
-#     recomp_dispatch*) or a game binary (nfsu2)
-#   - a file with more than 150 distinct lifted function names (sub_XXXXXXXX; a lifted chunk has ~250-400, recomp_manual.c 77): generated code under another name
+#     recomp_dispatch*) or a game binary (hp1)
+#   - a file with more than 150 distinct lifted function names (sub_XXXXXXXX; a lifted chunk has ~250-400, recomp_manual.c 37): generated code under another name
 #   - any file with the SHA-1 of a file on the disc of 64 bytes or more (game/extracted, when it is there)
 #   - two or more of 64 64-byte windows of default.xbe's executable sections in one file
 #   - this Mac's home folder path (the builder's)
 # Adapted from the HP2 port's test (itself from NFSU2Deadware's, MIT).   tests/dmg_no_game_code.sh <dmg>
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DMG="$1"; MNT="$(mktemp -d "${TMPDIR:-/tmp}/nfsu2dmg.XXXXXX")"
+DMG="$1"; MNT="$(mktemp -d "${TMPDIR:-/tmp}/hp1dmg.XXXXXX")"
 hdiutil attach -quiet -nobrowse -readonly -mountpoint "$MNT" "$DMG"
 trap 'hdiutil detach -quiet "$MNT"; rmdir "$MNT"' EXIT
 fail=0
 bad() { echo "FAIL: $1"; fail=1; }
-while IFS= read -r f; do bad "a game file by name: ${f#$MNT/}"; done < <(find "$MNT" \( -iname '*.xbe' -o -iname '*.BIN' \
-  -o -iname '*.xmv' -o -iname NFSUNDER -o -iname B3 -o -iname '*.iso' -o \( -name 'recomp_*.c' -not -name recomp_manual.c \) -o -name 'recomp_*.o' \
-  -o -name 'recomp_dispatch*' -o -name nfsu2 \) -not -path '*/Applications/*')
+while IFS= read -r f; do bad "a game file by name: ${f#$MNT/}"; done < <(find "$MNT" \( -iname '*.xbe' -o -iname '*.hog' \
+  -o -iname '*.xmv' -o -iname disk.txt -o -iname '*.iso' -o \( -name 'recomp_*.c' -not -name recomp_manual.c \) -o -name 'recomp_*.o' \
+  -o -name 'recomp_dispatch*' -o -name hp1 \) -not -path '*/Applications/*')
 GAME="$ROOT/game/extracted"
 python3 -I - "$MNT" "$GAME" <<'PY' || fail=1
 import hashlib, os, re, struct, sys

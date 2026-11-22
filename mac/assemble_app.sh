@@ -6,24 +6,24 @@ set -euo pipefail
 BIN="$1" LIBS="$2" ICON="$3" APP="$4" VERSION="$5"
 rm -rf "$APP.part"
 mkdir -p "$APP.part/Contents/MacOS" "$APP.part/Contents/Frameworks" "$APP.part/Contents/Resources"
-cp "$BIN" "$APP.part/Contents/MacOS/nfsu2"
+cp "$BIN" "$APP.part/Contents/MacOS/hp1"
 cp "$LIBS/libSDL2-2.0.0.dylib" "$APP.part/Contents/Frameworks/"
 cp "$LIBS/libSDL3.0.dylib" "$APP.part/Contents/Frameworks/libSDL3.dylib"   # sdl2-compat loads @loader_path/libSDL3.dylib
-[[ "$ICON" == - ]] || cp "$ICON" "$APP.part/Contents/Resources/nfsu2.icns"
+[[ "$ICON" == - ]] || cp "$ICON" "$APP.part/Contents/Resources/hp1.icns"
 cat > "$APP.part/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>NFS Underground 2</string>
-  <key>CFBundleDisplayName</key><string>NFS Underground 2</string>
-  <key>CFBundleIdentifier</key><string>io.github.sanyokkua.nfsu2</string>
-  <key>CFBundleExecutable</key><string>nfsu2</string>
-  <key>CFBundleIconFile</key><string>nfsu2</string>
+  <key>CFBundleName</key><string>Harry Potter Sorcerer's Stone</string>
+  <key>CFBundleDisplayName</key><string>Harry Potter Sorcerer's Stone</string>
+  <key>CFBundleIdentifier</key><string>io.github.sanyokkua.hp1</string>
+  <key>CFBundleExecutable</key><string>hp1</string>
+  <key>CFBundleIconFile</key><string>hp1</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
-  <key>LSApplicationCategoryType</key><string>public.app-category.racing-games</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.adventure-games</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>GCSupportsControllerUserInteraction</key><true/>
 </dict></plist>

@@ -5,7 +5,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 XBE="$1"; OUT="$2"
-T="$(mktemp -d "${TMPDIR:-/tmp}/nfsu2-icon.XXXXXX")"; trap 'rm -rf "$T"' EXIT
+T="$(mktemp -d "${TMPDIR:-/tmp}/hp1-icon.XXXXXX")"; trap 'rm -rf "$T"' EXIT
 /usr/bin/python3 -I "$HERE/icon/xbe_title_image.py" "$XBE" "$T/title.png" >/dev/null
 if [[ -x "$HERE/icon/squircle" ]]; then "$HERE/icon/squircle" "$T/title.png" "$T/sq.png"
 else swift "$HERE/icon/squircle.swift" "$T/title.png" "$T/sq.png"; fi
