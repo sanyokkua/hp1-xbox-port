@@ -826,21 +826,6 @@ static int skip_cutscenes_on(void)
     }
     return hp1_skip_cutscenes;
 }
-/* The frame step [0x21B7DC] (0.04 s, a constant the title only reads): what the
- * game steps once per drawn frame, outside the tick, moves by it -- characters on
- * a trajectory (Peeves on the Grand Staircase, followtrajectory), the wand
- * shuffle in Ollivanders (muddlewands, sub_000D4EF0), ... While a scene is
- * fast-forwarded it is HP1_FF_TICKS times longer; inside the tick, which already
- * runs that many times, it is the normal step (sub_00140CE0 below). */
-#define HP1_FRAME_STEP    0x0021B7DCu
-static float s_frame_step;              /* the title's value, kept while it is changed */
-static void set_frame_step(float mul)
-{
-    float v;
-    if (s_frame_step == 0.0f) memcpy(&s_frame_step, (const void *)XBOX_PTR(HP1_FRAME_STEP), 4);
-    v = s_frame_step * mul;
-    memcpy((void *)XBOX_PTR(HP1_FRAME_STEP), &v, 4);
-}
 static void cutscene_skip_tick(void)
 {
     static int on;
@@ -849,7 +834,6 @@ static void cutscene_skip_tick(void)
     if (want != on) {
         on = want;
         s_cutscene_ff = on;
-        set_frame_step(on ? (float)ff_ticks() : 1.0f);
         xa2_set_mute(on);
         {
             static double t_on;
@@ -906,14 +890,32 @@ void sub_00140CE0(void)
 {
     int k;
     start_level_tick();
-    if (!s_cutscene_ff) { sub_00140CE0_gen(); return; }
-    set_frame_step(1.0f);
-    for (k = ff_ticks(); k > 0; k--) {
+    for (k = s_cutscene_ff ? ff_ticks() : 1; k > 0; k--) {
         uint32_t ssp = esp;
         sub_00140CE0_gen();
         if (k > 1) esp = ssp;
     }
-    set_frame_step((float)ff_ticks());
+}
+
+/* The wand shuffle in Ollivanders (script command muddlewands, 0x4CB30, holds
+ * until [0x340291] is 2) is animated per drawn frame, not per tick: the frame
+ * driver sub_000D5760 updates each of the three boxes with sub_000D4EF0(box),
+ * stepping by the frame time [0x21B7DC] (a constant the title only reads). While
+ * a scene is fast-forwarded the step is HP1_FF_TICKS times longer for this
+ * update only. */
+extern void sub_000D4EF0_gen(void);
+void sub_000D4EF0(void)
+{
+    if (s_cutscene_ff) {
+        float dt, fast;
+        memcpy(&dt, (const void *)XBOX_PTR(0x0021B7DCu), 4);
+        fast = dt * (float)ff_ticks();
+        memcpy((void *)XBOX_PTR(0x0021B7DCu), &fast, 4);
+        sub_000D4EF0_gen();
+        memcpy((void *)XBOX_PTR(0x0021B7DCu), &dt, 4);
+        return;
+    }
+    sub_000D4EF0_gen();
 }
 
 /* XInputGetState(hDevice, pState): dwPacketNumber, then XINPUT_GAMEPAD
