@@ -866,12 +866,48 @@ extern "C" void overlay_main_tick(void)
     }
 }
 
+// NFSU2_OVERLAY_SHOT: the presented frame (game, effects and menu) as <prefix>N.bmp, when the script asked for one; with the
+// menu closed too, for screenshots of the game itself.
+static void TakeShot(id<MTLCommandBuffer> cb, id<MTLTexture> tex)
+{
+    const char *shot = getenv("NFSU2_OVERLAY_SHOT");
+    if (shot && g_shot_req.exchange(0) && !tex.framebufferOnly) {
+        NSUInteger w = tex.width, h = tex.height, row = w * 4;
+        id<MTLBuffer> buf = [tex.device newBufferWithLength:row * h options:MTLResourceStorageModeShared];
+        id<MTLBlitCommandEncoder> bl = [cb blitCommandEncoder];
+        [bl copyFromTexture:tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
+                 sourceSize:MTLSizeMake(w, h, 1) toBuffer:buf destinationOffset:0
+        destinationBytesPerRow:row destinationBytesPerImage:row * h];
+        [bl endEncoding];
+        std::string path = std::string(shot) + std::to_string(g_shot_n++) + ".bmp";
+        [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
+            FILE *f = fopen(path.c_str(), "wb");
+            if (!f)
+                return;
+            uint32_t size = 54 + (uint32_t)(row * h);
+            uint8_t hd[54] = { 'B', 'M' };
+            memcpy(hd + 2, &size, 4);
+            uint32_t off = 54, hs = 40, img = (uint32_t)(row * h);
+            int32_t iw = (int32_t)w, ih = -(int32_t)h;      // top-down
+            uint16_t planes = 1, bpp = 32;
+            memcpy(hd + 10, &off, 4); memcpy(hd + 14, &hs, 4); memcpy(hd + 18, &iw, 4); memcpy(hd + 22, &ih, 4);
+            memcpy(hd + 26, &planes, 2); memcpy(hd + 28, &bpp, 2); memcpy(hd + 34, &img, 4);
+            fwrite(hd, 1, 54, f);
+            fwrite(buf.contents, 1, row * h, f);
+            fclose(f);
+            fprintf(stderr, "[overlay] shot %s\n", path.c_str());
+        }];
+    }
+}
+
 extern "C" void overlay_present_metal(void *command_buffer, void *texture)
 {
-    if (!g_open.load())
-        return;
     id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>)command_buffer;
     id<MTLTexture> tex = (__bridge id<MTLTexture>)texture;
+    if (!g_open.load()) {
+        TakeShot(cb, tex);
+        return;
+    }
     if (!g_imgui)
         InitImGui(tex.device);
 
@@ -935,32 +971,5 @@ extern "C" void overlay_present_metal(void *command_buffer, void *texture)
     ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), cb, enc);
     [enc endEncoding];
 
-    const char *shot = getenv("NFSU2_OVERLAY_SHOT");
-    if (shot && g_shot_req.exchange(0) && !tex.framebufferOnly) {
-        NSUInteger w = tex.width, h = tex.height, row = w * 4;
-        id<MTLBuffer> buf = [tex.device newBufferWithLength:row * h options:MTLResourceStorageModeShared];
-        id<MTLBlitCommandEncoder> bl = [cb blitCommandEncoder];
-        [bl copyFromTexture:tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
-                 sourceSize:MTLSizeMake(w, h, 1) toBuffer:buf destinationOffset:0
-        destinationBytesPerRow:row destinationBytesPerImage:row * h];
-        [bl endEncoding];
-        std::string path = std::string(shot) + std::to_string(g_shot_n++) + ".bmp";
-        [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
-            FILE *f = fopen(path.c_str(), "wb");
-            if (!f)
-                return;
-            uint32_t size = 54 + (uint32_t)(row * h);
-            uint8_t hd[54] = { 'B', 'M' };
-            memcpy(hd + 2, &size, 4);
-            uint32_t off = 54, hs = 40, img = (uint32_t)(row * h);
-            int32_t iw = (int32_t)w, ih = -(int32_t)h;      // top-down
-            uint16_t planes = 1, bpp = 32;
-            memcpy(hd + 10, &off, 4); memcpy(hd + 14, &hs, 4); memcpy(hd + 18, &iw, 4); memcpy(hd + 22, &ih, 4);
-            memcpy(hd + 26, &planes, 2); memcpy(hd + 28, &bpp, 2); memcpy(hd + 34, &img, 4);
-            fwrite(hd, 1, 54, f);
-            fwrite(buf.contents, 1, row * h, f);
-            fclose(f);
-            fprintf(stderr, "[overlay] shot %s\n", path.c_str());
-        }];
-    }
+    TakeShot(cb, tex);
 }

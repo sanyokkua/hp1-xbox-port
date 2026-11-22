@@ -1,116 +1,111 @@
 # How the port was made
 
-A log of the steps, the decisions and what went wrong, for the next port (NFS Underground 1 uses the same layout).
+A log of the steps, the decisions and what went wrong. It follows the NFS Underground ports
+([nfsu2-xbox-port](https://github.com/sanyokkua/nfsu2-xbox-port), [nfsu-xbox-port](https://github.com/sanyokkua/nfsu-xbox-port)),
+which were made first with the same engine; this file says where Harry Potter differs. A PS2 port of the same game was tried
+before this one; its recompiler's instruction bugs (sticks, floors, timing) made the Xbox version, on a proven stack, the better
+path.
 
 ## Sources (pinned)
 
 | What | Where | Pin |
 |---|---|---|
-| Base | [myUdav4iik/nfsu2-ios](https://github.com/myUdav4iik/nfsu2-ios), branch `ios` | `85d2cbf` (= nfsu2-sw v0.5.13 + Apple host + `nv2a_metal`); newest on 2026-11-19 |
-| Engine patches | [LeoDeadware/NFSU2Deadware](https://github.com/LeoDeadware/NFSU2Deadware) `patches/` | its 26 patches for `85d2cbf` |
-| Disc | Xbox USA, `default.xbe` SHA-1 `428b5a70b9400f19cc5be7679db6c72a6f80a1c9`, 4,038,656 bytes, title `0x4541005A` | |
+| Engine, overlay menu, installer | [sanyokkua/nfsu2-xbox-port](https://github.com/sanyokkua/nfsu2-xbox-port) | `d23c105` (v0.1.0): xboxrecomp, nfsu2-sw and nfsu2-ios (`85d2cbf`), NFSU2Deadware's patches |
+| This game's facts | [MiddleDucky/HP-PS-Xbox-Recomp](https://github.com/MiddleDucky/HP-PS-Xbox-Recomp) (MIT, Windows, D3D8 on D3D12) | `f475af9c` |
+| Disc | Xbox USA, `default.xbe` title `0x45410037`, XDK 5659, entry `0x153DD1`, `.text` 1,570,612 bytes | section digests in `mac/xbe_check.py` |
 
-At first `tools/fetch.sh` cloned the base and `git am`ed `patches/`; since the overlay work the patched tree is in the
-repository as `engine/` (section 5), the patches kept in `docs/upstream-patches/` as the record.
+HP-PS-Xbox-Recomp plays the game from start to finish on Windows. Its hand-written addresses are for the **European** executable:
+in the library sections after `.text` (D3D, DSOUND, XPP, data) the USA address is the European one + 0x20; `.text` functions
+shift by -0x5E0..+0x8E0, so they were matched by bytes.
 
-## 1. A clean patch set
+## 1. The disc
 
-"Clean" = only the disc's assets; engine improvements are welcome. Of NFSU2Deadware's 26 patches:
+- An XISO (partition at 0): `default.xbe` (3.2 MB), 75 `.hog` archives, 18 `.xmv` movies, `disk.txt`; 1.8 GB.
+- As on the NFS Underground disc, the image's `.text` doesn't match its own stored digest (a media patch by the tool that made
+  the image), so the check compares the title, each section's size and stored digest, and every other section's data
+  (`mac/xbe_check.py`, 13 sections).
 
-- **Dropped:** 0005's `apple_textures.m` part (the HD pack loader), 0024 (Ukrainian strings), 0025 (Ukrainian fonts).
-- **Kept from 0005:** its `nv2a_metal.m` / `nv2a_backend.h` hunks (mips for replaced textures, `Nv2aTexInfo.flat`): 0016 and
-  0017 build on those lines, and they do nothing without an HD provider.
-- **0010:** its `apple_textures.m` hunks (HD preload) excluded.
-- **0004 kept:** it redraws the disc's own PS/LT/RT button glyphs (matched by hash) with CoreGraphics; no files.
+## 2. Lift, build, the XDK glue
 
-`git am --3way --exclude=src/apple/apple_textures.m` for 0005 and 0010 applied all 24 without conflicts; the result was
-exported with `git format-patch` as `patches/0001-0024`. Ours: 0025 (Settings window), 0026 (player folder).
+- **Lift:** the NFS Underground 2 port's `regen.sh` with HP1's executable: 59 s, about 6,000 functions, 27 C files. The XDK
+  functions the engine hooks (memmove, `D3D_BlockOnTime`, the vblank and PGRAPH interrupt handlers, the DSOUND DSP post, the
+  AC'97 reset) were found in HP1's executable by masked byte signatures of the same functions in the NFSU1 and NFSU2 executables
+  (`tools/sigmatch.py`; both agreed, each hit unique). Linked the first time.
+- **NFSU2-only parts removed** from the engine: the Switch and iOS hosts, the VP6 movie player (HP1 decodes its own XMV movies),
+  the HUD mover, the network card, the text patch, the texture and prompt packs.
 
-## 2. Lift, build, boot
+## 3. Bring-up, in the order the bugs appeared
 
-- Disc: `extract-xiso -x <iso> -d game` ignored `-d` (it made a folder named after the ISO): rename it to `game/extracted`.
-- Lift: `upstream/tools/regen.sh` with a venv's capstone 5.0.7 (`capstone<6`): 2 min 23 s, 83 C files, 129 MB.
-- Build: CMake + Ninja, `-DNFSU2_METAL=ON -DNFSU2_VULKAN=OFF -DXBOXRECOMP_D3D8_NULL=ON`, about a minute with 8 jobs.
-- First boot on the M1 Pro: intro, menus and the profile dialog right away; the user then played several races at 60 fps,
-  smooth and stable.
-- **Frame dumps:** `RECOMP_FB_DUMP` reads guest memory and is black under Metal (the picture never goes back there); use
-  `RECOMP_GL_DUMP=<prefix>,<every n frames>` (Metal's own read-back, BMP).
-- **Gate:** `tools/smoke.sh` runs the game for 75 s in a throwaway HOME on an APFS clone of the disc
-  (`RECOMP_PAD_PRESS=0x10,2500,200` = START every 2.5 s), and checks the smoke timer's clean exit and a non-black last frame.
+Each was a black screen, a hang or a crash.
 
-## 3. Settings and the player folder (patches 0025, 0026)
+1. **Cutscene stuck on its loading screen:** the loader built every path as `\Device\CdRom0\(null)a001_0001.banr`. XAPI keeps a
+   per-thread table keyed by the thread id; the runtime gave every thread one shared thread object and no id. Now each thread has
+   its own object and id (`xbox_memory_layout.c`, `kernel_bridge.c`).
+2. **Black cutscene after loading:** `fucompi; lahf; test ah, 0x44; jp` picks "draw the scene or black". The lifter built `lahf`
+   only after SSE compares. Now x87 compares set the flags `lahf` reads.
+3. **Menu invisible:** its per-frame callback sits right after a jump table, which the disassembler read as code, so the
+   function was missing (`[ICALL] Failed to resolve VA 0x00023BD0` every frame). Seeded (`engine/config/seed_functions.json`).
+   Later crashes of the same kind (Ollivanders, the Flipendo scene) were fixed the same way; one bad seed in the middle of an
+   instruction cut a function in two and blacked out the Hogwarts arrival for 90 s: check every seed is an instruction start.
+4. **The controller never opened:** replaced XAPI's XInput with HP-PS-Xbox-Recomp's direct design, fed from the runtime's pad
+   report (so the keyboard, scripted input and the menu's neutral pad still apply). Rumble completes at once: the game waited
+   forever the first time Harry was hit.
+5. **White walls, then black rooms:** the Metal renderer had no fixed-function lighting (the NFS games use vertex programs).
+   Added the chip's lighting per vertex, and the emission from the vertex colour for HP1's pre-lit rooms.
+6. **Black Remembrall, hint boxes and save screens:** the game drew them, but the renderer rebuilt and cleared the screen surface
+   mid-frame (the 3D scene and the UI came with different clip widths). Now a surface is reused or grown with its pixels kept.
+7. **Tiled shadows, then mirrored ones:** HP1 projects character shadows with texture-coordinate generation and a texture
+   matrix, which the renderer passed through as plain coordinates (a copy of the shadow on every floor plank). Both are in the
+   vertex shader now; behind the projector (q <= 0) the lookup falls outside the texture, so no mirrored wedges.
+8. **The kernel import scan overwrote code:** the scan before the import table took the XPP section's bytes for 7 imports. Only
+   ordinals below 512 now: 110 of 110 imports bridged.
 
-- NFSU2Deadware set its options in a launcher window before the game (JXA) and passed them as environment variables. Here they
-  are a **Settings window inside the game** (Cmd+,), the same window and `settings.ini` as the NFS Underground 1 port, so all the
-  ports configure the same way. Resolution Scale is live (it is the game's Options row, `nfsu2_options_set_scale`); the
-  post-effects are read once at start (`post_settings`), so those rows say "next start".
-- The app needs no launcher: `apple_player.c` sets `NFSU2_GAME_DIR`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, the working directory and
-  the log when `NFSU2_GAME_DIR` isn't set. The game writes its saves (`UDATA/`) in the game folder.
+## 4. Port features
 
-## 4. The installer (the HP2 model)
+- **Settings menu** (the NFS ports' overlay): HP1's rows in `engine/src/overlay/hp1_options.c`. Bloom needed a lower "this is a 3D
+  scene" threshold (HP1's rooms have 80-170 draws, the NFS games' 150+): `NFSU2_POST_MIN_DRAWS=40`.
+- **Skip Logo Movies** (from HP-PS-Xbox-Recomp): the movie player returns at once for the logos; the boot reads only a flag,
+  which stays as if the movie ran to its end.
+- **Skip Cutscenes:** the game's own cuts (`cut/*.hog`) have a skip check that the override answers "pressed" once per cut (the
+  arrival cut asks twice per update). Scenes inside a level (letterboxed level scripts) have no skip: they run 8 game ticks per
+  frame, muted, with lines of speech stopped. The wand shuffle in Ollivanders steps per drawn frame and gets an 8x step too. A
+  try at an 8x step for everything per frame sent the game back to the title at the end of Diagon Alley and was reverted. Each
+  fast-forward logs its length; over 4 s it names the script command that held it.
+- **Skip Save Messages:** the storage checks hold each step at least 500 or 750 ms in busy loops on a stopwatch (as on the
+  console); the stopwatch answers "long enough" to exactly those loops (matched by their bytes).
+- **Stick dead zone:** pads rest off centre (a tester's at -1800 / +800 of 32767); a radial dead zone of ~11% with the rest
+  rescaled to full range (`engine/xboxrecomp/src/input/stick_deadzone.h`, unit test in `engine/xboxrecomp/tests/stick_deadzone`).
 
-The DMG holds no game code: the installer imports the disc, lifts `default.xbe` and compiles it on the player's Mac.
+## 5. A self-contained repository and the installer
 
-- **Kit** (`tools/kit.py`, from NFSU2Deadware's): the lifter (Python) + capstone, upstream's runtime and our host as
-  compiled objects and static libraries, the link line and the lifted chunks' compile flags, both read from the release build's
-  Ninja commands (so the player's build matches ours).
-- **Player's build** (`mac/build_game.sh`): `/usr/bin/python3` (CLT 3.9) lift, gives the same C as the 3.15 venv; clang on the
-  performance cores (23 s on the M1 Pro); link; then the icon from the disc's title image.
-- **SDL** for macOS 15: SDL3 3.4.16 and sdl2-compat 2.32.74 from source (`tools/build_deps.sh`). sdl2-compat loads
-  `@loader_path/libSDL3.dylib`, so the app has `Frameworks/libSDL2-2.0.0.dylib` + `Frameworks/libSDL3.dylib`. The game builds
-  for macOS 15 without availability warnings.
-- **`tests/dmg_no_game_code.sh`**: disc file names, the disc's SHA-1s, 64 windows of the XBE's executable sections, more than 150
-  lifted function names in one file, the builder's home path.
-- **Measured:** a headless install from the DMG into a clean HOME (`NFSU2_NO_UI=1 NFSU2_IMPORT_ISO=… NFSU2_INSTALL_DIR=…`):
-  copy 2.6 GB + lift + compile + link + icon = **3 min 42 s** on the M1 Pro; the installed app booted to the menus from its
-  player folder. DMG 4.6 MB. Proven negative: a DMG with 1.2 MB of `default.xbe` (19 windows)
-  and a lifted chunk renamed `notes.txt` (398 names) fails.
+As in the NFS Underground ports: `engine/` holds everything, `tools/kit.py` collects the lifter and the compiled runtime (no game
+code) into the installer, `mac/build_game.sh` lifts, compiles and links on the player's Mac, `tests/dmg_no_game_code.sh` checks the
+DMG. HP1 changes: the target `hp1_recomp`, the `HP1_` installer variables, the disc check, and the test's game file patterns
+(`*.hog`, `*.xmv`). The test's 64-byte code windows now skip padding: HP1's executable sections hold zero runs that match any
+binary (SDL, Capstone) and gave false failures; a DMG with a 400 KB slice of the game's code still fails it.
 
-## 5. A self-contained repository
+## Verification
 
-The port must build from this repository alone (the user's rule for all the ports): `git archive` of the patched tree went into
-`engine/` (535 files, 10 MB; its `CLAUDE.md` moved to `engine/docs/NFSU2_IOS_AGENT_NOTES.md` so it doesn't instruct agents
-working here), `patches/` to `docs/upstream-patches/` with a README, `tools/fetch.sh` removed. `engine/gen/` (the lift) is
-ignored. `publish_check.sh` allows one file it would flag: xboxrecomp's 4 KB synthetic `conformance/test.xbe` (its `mkxbe.py`).
-
-## 6. The settings menu (overlay)
-
-Modelled on SpeedBreaker's (`runtime/ui/settings_menu.cpp`, Dear ImGui over Vulkan): written anew for this engine in
-`engine/src/overlay/` so every port can take it.
-
-- **Drawing:** Dear ImGui 1.92.9 (the core as in SpeedBreaker, the Metal backend from the same tag) draws into the drawable in
-  `nv2a_metal.m`'s `present()`, after the game's picture and the fps counter, through a hook (`nv2a_mtl_overlay_hook`) so
-  the renderer doesn't depend on the menu. Roboto Medium is compiled in (CMake writes it as a byte array).
-- **Threads:** the game presents on its render thread; SDL events come on the main thread. `overlay_event` (main) turns keys,
-  pad buttons, the stick and the mouse into menu actions on a locked queue; `overlay_present_metal` (render) runs them and
-  lays the menu out. Full screen, Quit and opening Finder are requested back to the main thread (`overlay_main_tick`, run each
-  turn of the event loop, which now waits at most 16-50 ms instead of forever).
-- **Input:** `xbox_input_blocked` (xinput_device.c) gives the game a connected, neutral pad while the menu is open and after,
-  until every key and button is up (so B closing the menu doesn't reach the game). Key releases still go to the keyboard pad.
-- **Options:** one table per game (`nfsu2_options.c`): settings.ini rows (`key`, `values`, `apply`) or the game's own
-  Options rows (`get`/`set` into `recomp_manual.c`'s `nfsu2_option_get/set`). Made live for the menu: draw distance
-  (`nfsu2_set_draw_distance`), gamma and effects (`nv2a_mtl_post_reload`: the post settings are read again at the next
-  frame; `post_frame` calls `post_settings` every flip, which at first only the shader build did, so Gamma and Effects
-  needed a restart until the user noticed), motion blur (`nv2a_mtl_blur_off`), volume (`xa2_set_master_volume`), fps counter. Frame Rate and Keyboard as
-  Controller stay "restart".
-- **Tests:** `NFSU2_OVERLAY_SCRIPT="25:open,26:next,27:down,28:right,29:shot,30:close"` runs menu steps; `NFSU2_OVERLAY_SHOT`
-  makes the drawable readable and writes `shot<n>.bmp`. `tools/smoke.sh` opens and closes the menu. Checked from shots: every
-  page, a live change saved to `settings.ini`, the "restart" mark, the Quit prompt.
+- Play tests by the owner on an M1 Pro with a gamepad: New Game through Diagon Alley, the Hogwarts arrival and the first missions,
+  saves and loading; each bug above came from a play test or its recording and was reproduced before the fix.
+- Scripted runs (`RECOMP_PAD_SCRIPT` with buttons and sticks, `HP1_START_LEVEL`, loading saves from the title menu) for every fix:
+  the arrival skipped in about a second, Ollivanders' scene in 1.7 s, the camera turned by the right stick at both frame rates.
+- `tools/smoke.sh`: 75 s, the menu opened and closed, the last frame not black: OK.
+- `tools/make_dmg.sh`: DMG 5.2 MB, `tests/dmg_no_game_code.sh` PASS (94 disc files, 44 content windows of 3.1 MB of code).
+- A headless install from the DMG into a clean HOME (`HP1_NO_UI=1 HP1_IMPORT_ISO=… HP1_INSTALL_DIR=…`): copy 1.8 GB + check +
+  lift + compile 27 files + link + icon = **1 min 44 s** on the M1 Pro; the installed app started from its player folder
+  (`game/`, `player/`, `saves/`, `cache/`, `logs/hp1.log`), bridged 110 of 110 kernel imports, played the opening cutscenes and
+  exited cleanly on the smoke timer.
+- `tools/publish_check.sh`: PASS.
 
 ## Pitfalls (each cost a run)
 
-- **zsh doesn't split `$VAR` into words:** `AM="git am -q"; $AM p` is "command not found". Use a function.
-- **regen.sh `cd`s into the toolkit:** relative paths given to it break; `build_game.sh` makes every argument absolute.
-- **`env -i PATH=/usr/bin:/bin` has no `/usr/sbin`:** `sysctl` (the job count) was missing, `xargs -P ""` compiled nothing.
-- **A file made with the Write tool isn't executable:** the installer app could not start (`Permission denied`). `make_dmg.sh` now
-  sets 755 itself.
-- **Empty files share a SHA-1:** the disc has a 0-byte `streamed.dat`, so every empty `__init__.py` "was a disc file". The test
-  ignores disc files under 64 bytes, and `recomp_manual.c` (upstream's hand-written overrides) by name.
-- **The lifted C is split 250 functions a file:** a "more than 2000 names" check missed a renamed chunk; 150 catches it
-  (`recomp_manual.c` has 77).
-- **sdl2-compat loads `libSDL3.dylib`:** `build/deps` had only `libSDL3.0.dylib`, so the dev build aborted at start with an
-  empty log; `build_deps.sh` adds the symlink (the app's `Frameworks/` has the right name).
-- **A pipe hides a failed check:** `publish_check.sh | tail` let a commit through; run checks unpiped before committing.
-- **`nv2a_metal` is built with `-Wno-unguarded-availability`:** "no availability warnings for macOS 15" needed a compile of it
-  with them on (none).
-- **`apple_main.c` declares `s_win` after `set_full`:** functions for the Settings window that use it go after that declaration.
+- **A seed inside an instruction** cuts a function in two; its switch cases become fake functions without their tables.
+- **Widening a time hack** ("everything per frame 8x") broke a level transition that no test reached. Keep such changes to code
+  a test reaches.
+- **Sampling a video at 1 fps** hid which part of a scene was slow; 3 fps around the moment showed it.
+- **zsh** reads `$t:shot` as a variable modifier: write `${t}` in generated scripts.
+- **An apostrophe in the game's name** ("Sorcerer's") breaks single-quoted shell and AppleScript strings: the installer builds
+  those with double quotes, and `osacompile` checks them.
+- **Frame dumps at 4x are 11-20 MB each:** a long run of them filled the disk and later dumps came out black. Dump sparsely and
+  delete them.
