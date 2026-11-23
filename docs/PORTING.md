@@ -59,6 +59,11 @@ Each was a black screen, a hang or a crash.
    vertex shader now; behind the projector (q <= 0) the lookup falls outside the texture, so no mirrored wedges.
 8. **The kernel import scan overwrote code:** the scan before the import table took the XPP section's bytes for 7 imports. Only
    ordinals below 512 now: 110 of 110 imports bridged.
+9. **x87 80-bit operands (2026-11-23, from the Chamber of Secrets port):** `fld xword ptr [m80]` was lifted as a 4-byte
+   float and `fstp m80` as a no-op. The CRT's asin/acos load π/2 that way for |x| = 1 (≈ 0 instead), which in CoS turned
+   Harry 90° when the stick pointed straight along an axis. The lifter now emits `recomp_ld_f80` / `recomp_st_f80`
+   (`recomp_types.h`), with a unit test; in HP1 21 loads and 4 stores changed (`/* fld tbyte */`, `/* fstp tbyte */`).
+   Relift, build and `tools/smoke.sh` pass.
 
 ## 4. Port features
 
