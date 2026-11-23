@@ -65,6 +65,32 @@ Each was a black screen, a hang or a crash.
    (`recomp_types.h`), with a unit test; in HP1 21 loads and 4 stores changed (`/* fld tbyte */`, `/* fstp tbyte */`).
    Relift, build and `tools/smoke.sh` pass.
 
+10. **Engine fixes from the Chamber of Secrets port (2026-11-23, not released):** From `hpcos-xbox-port` (its notes:
+   XBOX360_PORTING_NOTES.md section 14), commits a324956, e448ada, 84cc945, 582dc61, 0013c4f, 8e7050a:
+   - **Texture border colour in the shader** (CoS `ca756e0`): border addressing (mode 4) samples clamp-to-edge and the
+     fragment shader returns the stage's `SET_TEXTURE_BORDER_COLOR` outside [0, 1] (`nv2a_samp`, `Nv2aMslFs.bc/bm`). A
+     `[metal] border addressing` line names each stage and colour a title uses. Checked: New Game to Ollivanders and walking
+     there, and `HP1_START_LEVEL=20` (Hogwarts, Harry on the floor): no stage with border addressing in these scenes; the
+     frames before and after match (differences only where the run's timing differed). The old sampler gave opaque white or
+     black for border colours with alpha >= 0x80, which the shader now returns exactly.
+   - **LB = White, RB = Black** and the **press latch** (CoS `dcc5179`, `12f88fc`): the bumpers were swapped in
+     `xinput_device.c` in every port of this engine; the keyboard keeps Q = White, E = Black (`apple_keyboard.c`). Presses
+     are latched from SDL's controller events between two reads (`RECOMP_PAD_LATCH=0` off) and held for
+     `RECOMP_PAD_MIN_READS` reads (default 2). `RECOMP_PAD_SCRIPT` does not go through SDL events, so scripted runs do not
+     exercise the latch; needs a pad in a play test.
+   - **Runtime** (CoS `dcc5179`, `f38f328`, `cf6d9c2`): the handle table under a spinlock; a read on a handle closed within
+     2 s returns `STATUS_END_OF_FILE`; `NtSetEvent` waits (2 ms at most) until the waiter it releases has queued for the
+     guest lock (`RECOMP_WAKE_HANDOFF=0` off, `RECOMP_EVT_TRACE=1`).
+   - **No feedback copy** for a render target bound on a stage no combiner reads (CoS `9178756`, `nv2a_psh_reads_tex`).
+   - **Not ported:** HP1 sets neither CONTROL0 bit 16 nor the fog unit in the scenes run, so the W-buffer depth, the AO's
+     linear mode and the fog unit are not ported. The InsertCallback latch hold is not needed: this tree has no clear-value
+     latch (only CoS's XDK 5028 calls back through it). Viewport constants 58/59 from `SET_VIEWPORT_*`: this XDK writes the
+     constants itself. The worker wait, loader callbacks, file-cache hold, DirectSound address tag, 2D tile seams, cutscene
+     skip and left-stick range are CoS's own code or tuning.
+   - Verified: `cmake --build build/release`; `tools/smoke.sh` OK; the Metal shader test (408 shader pairs, 8 recorded by
+     the run, 0 failures); frame throughput as before. The runtime's own unit tests (`engine/xboxrecomp/tests/kernel_*`)
+     need `pkg-config`, not installed on this Mac: not run.
+
 ## 4. Port features
 
 - **Settings menu** (the NFS ports' overlay): HP1's rows in `engine/src/overlay/hp1_options.c`. Bloom needed a lower "this is a 3D

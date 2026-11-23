@@ -77,7 +77,9 @@ the game runs. The sticks have a small dead zone, so a pad that rests a little o
 | Tab / P | Back / Start | Back: the Remembrall |
 | I J K L | right stick | the camera |
 
-The keys can't be changed yet. The controller's buttons are the game's own Xbox layout (spells on X, Y and B; jump and act on A).
+The keys can't be changed yet. The controller's buttons are the game's own Xbox layout (spells on X, Y and B; jump and act on A). A modern pad's bumpers stand in for the
+original controller's White and Black buttons: **LB is White, RB is Black** (as in xemu). A press shorter than one of the
+game's frames is still seen once.
 
 ### The settings menu
 
