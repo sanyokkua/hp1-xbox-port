@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 (2026-11-23)
+
+- Lifter: x87 80-bit operands (`fld`/`fstp` of a 10-byte value) were read as 4-byte floats and not stored at all. The C
+  runtime's asin/acos load π/2 that way, which in the Chamber of Secrets port turned the player 90° when the stick pointed
+  straight along an axis. Now converted exactly (`recomp_ld_f80` / `recomp_st_f80`); 21 loads and 4 stores in this game.
+
 ## 0.1.0 (2026-11-22)
 
 First release: the Xbox USA disc of *Harry Potter and the Sorcerer's Stone*, built on the player's Mac.
