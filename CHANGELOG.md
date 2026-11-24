@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+Engine and tool fixes from the Prisoner of Azkaban port:
+
+- Kernel: `ExQueryNonVolatileSetting` answers `XC_FACTORY_AV_REGION` (0x103) as NTSC-M (0x00400100); it was 0.
+- Disassembler: a call target that splits an instruction is also dropped when its callers are only functions decoded out of
+  data (no change to this game's 6082 functions).
+- `tools/stubcheck.py` covers the XDK code sections (D3D, XGRPH, DSOUND, XMV, D3DX, XPP), not only `.text`.
+
 ## 0.1.2 (2026-11-24)
 
 Engine fixes from the Harry Potter Chamber of Secrets port:

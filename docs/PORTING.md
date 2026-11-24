@@ -120,6 +120,15 @@ Each was a black screen, a hang or a crash.
     attaches and detaches a virtual pad. Verified: `tools/smoke.sh` OK; `NFSU2_PAD_HOTPLUG_TEST=37 tools/smoke.sh 120`
     OK (about 1,600 cycles, no abort).
 
+## 3a. Backports from the PoA port (2026-11-24)
+
+- Disasm `_prune_data_call_targets`: relift with it, `functions.json` identical (6082 starts, same 17 stubs): no start dropped
+  or added. Disasm tests: 62 passed.
+- Kernel: `XC_FACTORY_AV_REGION` (0x103) = 0x00400100. This build is fixed to the NTSC-US disc (`region_profile.h`), so there is
+  no region to pick. `XC_FACTORY_GAME_REGION` (0x104) is still unanswered here (PoA and CoS answer 1); not changed, no symptom.
+- `tools/stubcheck.py` range: `.text` plus D3D, XGRPH, DSOUND, XMV, D3DX, XPP (raw data only). 17 stubs, 0 real code: nothing to seed.
+- `tools/smoke.sh 75`: OK, 5 frames, last mean 50.
+
 ## 4. Port features
 
 - **Settings menu** (the NFS ports' overlay): HP1's rows in `engine/src/overlay/hp1_options.c`. Bloom needed a lower "this is a 3D
