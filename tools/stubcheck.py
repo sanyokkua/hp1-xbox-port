@@ -9,7 +9,7 @@ pops never happen, the caller gets its registers and stack back wrong (CoS: the 
 tail-jumped to 0x72510, the entity update's loop registers became pointers, and the game froze or
 crashed at the next door). Each stub is classed:
   BOUNDARY  an instruction start inside a detected function: real code, seed it (tools/addseed.py)
-  code      outside every function but in .text: real code, seed it
+  code      outside every function but in a code section (.text, XDK libraries): real code, seed it
   mid-insn  inside an instruction of a detected function: a misdecode, harmless
   data      outside .text: harmless
   reviewed  listed in engine/config/stub_not_code.json: looked at by hand, data (a table the lifter
@@ -23,7 +23,9 @@ from sigmatch import load, read
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32
 
 secs = load(os.path.join(R, "game/extracted/default.xbe"))
-TEXT = next((va, va + len(raw)) for name, va, _, raw in secs if name == ".text")
+# .text plus this XBE's XDK code sections (D3D, XGRPH, DSOUND, XMV, D3DX, XPP); bytes past a section's raw
+# data are zero fill, not code
+CODE = [(va, va + len(raw)) for name, va, _, raw in secs if name in (".text", "D3D", "XGRPH", "DSOUND", "XMV", "D3DX", "XPP")]
 fs = json.load(open(os.path.join(R, "engine/xboxrecomp/tools/disasm/output/functions.json")))
 rng = sorted((int(f["start"], 16), int(f["end"], 16)) for f in fs)
 starts = [r[0] for r in rng]
@@ -49,7 +51,7 @@ for a in (int(x, 16) for x in stubs):
         s = rng[i][0]
         kind = "BOUNDARY" if a in {x.address for x in md.disasm(read(secs, s, a - s + 16) or b"", s)} else "mid-insn"
     else:
-        kind = "code" if TEXT[0] <= a < TEXT[1] else "data"
+        kind = "code" if any(lo <= a < hi for lo, hi in CODE) else "data"
     real += kind in ("BOUNDARY", "code")
     ins = [f"{x.mnemonic} {x.op_str}" for x, _ in zip(md.disasm(read(secs, a, 16) or b"", a), range(2))]
     print(f"{a:#010x} {kind:8} from {','.join(sorted(refs.get('sub_%08X' % a, [])))} | {' ; '.join(ins)}")
