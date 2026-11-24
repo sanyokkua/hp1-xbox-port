@@ -1,0 +1,14 @@
+[
+ {
+  "start": "0x00045814",
+  "note": "0x08 bytes in a table inside .text; reached only from a misdecode (sub_000457AA)"
+ },
+ {
+  "start": "0x001F37A0",
+  "note": "D3DX section data after code (add al,0 ...); reached only from a misdecode (sub_001F37ED)"
+ },
+ {
+  "start": "0x001F37BC",
+  "note": "D3DX section data, as 0x1F37A0"
+ }
+]

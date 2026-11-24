@@ -26,5 +26,157 @@
  {
   "start": "0x0009F580",
   "note": "behaviour/AI handler in the function table at .data 0x212284 (entry 17), right after a jump table; reached in Ollivanders' Flipendo scene (ICALL crash 2026-11-21). HP-PS seeds it as PAL 0x9F570"
+ },
+ {
+  "start": "0x0001FED6",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x00041371",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x00041D48",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x00042E19",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x0007FC21",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x0007FCB4",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x0007FCC0",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x000ACA7E",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x000C6540",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x000DFC77",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x000DFC9A",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x00103F80",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x00104E52",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x00108FB8",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x0010D337",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x0010EDA0",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x0010EFB2",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x0013DCBB",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x0014DA67",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x00188EA5",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x001893BE",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x00189478",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x00189FBD",
+  "note": "stubcheck: real instruction start the lifter stubbed (empty g_esp += 4 body)"
+ },
+ {
+  "start": "0x00041D5A",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x00080525",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x000DFC82",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x000DFD10",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x000DFF28",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x000DFF97",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x00104641",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x00105221",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x0010D8E0",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x0010D914",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x0010F281",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x0013D9C0",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x00188EB7",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x00189FFA",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 2)"
+ },
+ {
+  "start": "0x00041DD3",
+  "note": "stubcheck: real instruction start the lifter stubbed (split round 3)"
  }
 ]
