@@ -4,6 +4,9 @@
 
 Engine and tool fixes from the Prisoner of Azkaban port:
 
+- Renderer (Metal): shaders compile as MSL 3.0 (`RECOMP_MTL_LANG=<major>.<minor>` picks another, `0` the OS default). A shader
+  first seen in play stalled its frame 126-747 ms, now 42-184 ms; the `[hitch]` log line counts pipelines too.
+- `tools/immscan.py`: finds functions referenced only by an immediate (0 hits for this game).
 - Kernel: `ExQueryNonVolatileSetting` answers `XC_FACTORY_AV_REGION` (0x103) as NTSC-M (0x00400100); it was 0.
 - Disassembler: a call target that splits an instruction is also dropped when its callers are only functions decoded out of
   data (no change to this game's 6082 functions).

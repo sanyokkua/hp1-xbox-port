@@ -129,6 +129,15 @@ Each was a black screen, a hang or a crash.
 - `tools/stubcheck.py` range: `.text` plus D3D, XGRPH, DSOUND, XMV, D3DX, XPP (raw data only). 17 stubs, 0 real code: nothing to seed.
 - `tools/smoke.sh 75`: OK, 5 frames, last mean 50.
 
+## 3b. Second backport round from the PoA port (2026-11-24)
+
+- **MSL 3.0** (`nv2a_metal.m`, log `shader language 3.0`): `tools/smoke.sh 75` in a fresh HOME, before vs after: program
+  compiles 204 / 179 / 126 / 747 ms -> 60 / 43 / 42 / 184 ms (first-seen shaders at frames 4, 205, 501, 505); no `shader failed`;
+  the same cutscene scene renders alike. The rest of the 50+ ms `[hitch]` lines are not shader compiles (loading, 0 programs).
+- **`tools/immscan.py`**: 903 immediate refs to code, none at a non-function start after padding. 0 hits, as the earlier scan.
+- **Learned stick range: not applicable.** This port never had `stick_range` (no fixed 0.65): only the radial dead zone
+  (`STICK_DEADZONE`) on both sticks, so walking is not squeezed. Not ported.
+
 ## 4. Port features
 
 - **Settings menu** (the NFS ports' overlay): HP1's rows in `engine/src/overlay/hp1_options.c`. Bloom needed a lower "this is a 3D
