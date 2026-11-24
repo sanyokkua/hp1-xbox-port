@@ -91,6 +91,27 @@ Each was a black screen, a hang or a crash.
      the run, 0 failures); frame throughput as before. The runtime's own unit tests (`engine/xboxrecomp/tests/kernel_*`)
      need `pkg-config`, not installed on this Mac: not run.
 
+11. **Runtime lifetime fixes and the stub check** (CoS `58773a1`, `33a2b93`, the check from `6ce58e0`, 2026-11-24):
+    - A skipped wild indirect call pops only the return address when the call site is followed by `add esp, N`
+      (`recomp_icall_skip_esp`, all four `RECOMP_ICALL_SAFE*` failure paths); before, esp ended N bytes high.
+    - Timers signal inside `g_timer_lock` and before the DPC; `KeSetTimer` resets inside the lock; 256 slots, a log when
+      full. Handle tokens are handed out next-fit (65536 slots) on top of this tree's locked table (`84cc945`): a late
+      read on a closed token now finds no handle instead of the next file. A Ke shadow whose memory reads as the guest's
+      own event/semaphore is dropped; KeInitializeEvent/Mutant/Semaphore insert the shadow after the header.
+    - Win32 objects: `obj_get` takes a reference; open handles counted apart from references; `CloseHandle` drops one
+      handle once; `DuplicateHandle` adds one; registry 262144 slots with a log. NtReadFile/NtWriteFile hold the fd
+      (`w32_handle_get_fd`/`w32_handle_put`) and use `pread`/`pwrite` at an offset. The heap refuses sizes larger than
+      itself. Not ported: CoS's factory region (0x104), spawner guard, entity diagnostics.
+    - **Stub check:** `tools/stubcheck.py` (`.text` range read from the XBE) classes every stub in
+      `recomp_stubs_unresolved.c`; `tools/relift.sh` (new here: regen + check + build) fails on real code. HP1 had
+      **26 of 40 stubs** at real instruction starts; 3 more are data (a 0x08-byte table in `.text`, a D3DX table) reached
+      only from misdecodes, listed with a note in `engine/config/stub_not_code.json`. Real ones included shared exits
+      (0x14DA67 `pop edi; pop esi; ret`, and `ret` at 0xC6540, 0x189478), the CoS freeze class. 38 seeds in 3 rounds
+      (each split turns jumps across it into new stubs: epilogues at 0x80525, 0x104641, 0x105221, 0x10D914, 0x10F281);
+      now 17 stubs, 0 real. Seeds added with `tools/addseed.py`.
+    - Verified: relift + build; `tools/smoke.sh` OK (75 s); a 150 s scripted New Game (`build/script_floor.txt`) into
+     Diagon Alley (hpm01) with clean exit and no wild calls, in a throwaway HOME.
+
 ## 4. Port features
 
 - **Settings menu** (the NFS ports' overlay): HP1's rows in `engine/src/overlay/hp1_options.c`. Bloom needed a lower "this is a 3D

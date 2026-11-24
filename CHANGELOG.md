@@ -14,6 +14,16 @@ Engine fixes from the Harry Potter Chamber of Secrets port:
 - Renderer: no copy of a render target that stays bound on a stage no shader reads (CoS: 24 -> 60 fps).
 - Log: one `[metal]` line each for border addressing, W-buffer depth and fog-unit use.
   HP1 uses neither W-buffer depth nor the fog unit (both not ported).
+- Runtime: a skipped wild indirect call at a site whose caller pops its own arguments (`add esp, N`) pops only the
+  return address (esp was left N bytes high). Timers signal before their DPC and inside the timer lock, and a set resets
+  inside it (a lost wake-up); 256 timer slots, a log when none is free. Reads, writes and waits hold their object, so a
+  close on another thread no longer frees it in use; a handle closes once; handle slots are handed out next-fit (65536);
+  a read or write at an offset is one `pread`/`pwrite` (two threads on one handle got each other's bytes). A Ke object
+  shadow whose memory now holds the guest's own event is dropped. The heap refuses a size larger than itself (it rounded
+  to 0).
+- Lifter: 38 functions the disassembler missed are seeded. The lifter had given them empty bodies, so callers that
+  jumped to a shared exit (`pop edi; pop esi; ret`) got their stack and registers back wrong. `tools/stubcheck.py`
+  (run by the new `tools/relift.sh`) fails when a stub is real code.
 
 ## 0.1.1 (2026-11-23)
 
