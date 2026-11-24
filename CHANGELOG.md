@@ -4,6 +4,9 @@
 
 Engine and tool fixes from the Prisoner of Azkaban port:
 
+- Renderer (NV2A executor): in fixed-function mode inline and SET_VERTEX batches are transformed like array batches, the
+  SET_VERTEX_DATA4F(3) diffuse is used, and one-point and two-vertex batches are drawn instead of dropped.
+  `RECOMP_INLINE_FF=0` restores the old rule. No effect seen in this game's routes so far.
 - Renderer (Metal): shaders compile as MSL 3.0 (`RECOMP_MTL_LANG=<major>.<minor>` picks another, `0` the OS default). A shader
   first seen in play stalled its frame 126-747 ms, now 42-184 ms; the `[hitch]` log line counts pipelines too.
 - `tools/immscan.py`: finds functions referenced only by an immediate (0 hits for this game).

@@ -138,6 +138,19 @@ Each was a black screen, a hang or a crash.
 - **Learned stick range: not applicable.** This port never had `stick_range` (no fixed 0.65): only the radial dead zone
   (`STICK_DEADZONE`) on both sticks, so walking is not squeezed. Not ported.
 
+## 3c. Executor fixed-function batches (PoA round 3, 2026-11-25)
+
+PoA's fix to `nv2a_pb_exec.c` (`batch_is_ffp` no longer excludes inline batches; `prim_min_vertices`; SET_VERTEX_DATA4F(3)
+diffuse) applied. A/B: the same scripted route on one binary with the new rule and with `RECOMP_INLINE_FF=0`, throwaway
+HOME and a clone of the game folder, frame dumps every 200-250 frames, 160 s and 245 s runs: logos, title menu, language
+screen, Diagon Alley arrival cuts, Ollivanders (cut and wand room), then free play with the HUD and the Remembrall hint box.
+A temporary counter logged every inline/immediate batch and every batch of fewer than 3 vertices reaching the rasteriser:
+**0 in both runs (about 400 s of play)**, so the new rule never ran and the frames match (differences are only cutscene timing
+between runs; the later gameplay frames differ by under 1 % of sampled pixels). Not reached: the pause screen, the barrel
+room (free movement in Diagon Alley), so the open "barrel shadow strips" issue is unchanged and unexplained here. The
+change is kept because PoA validated it against xemu and nothing here uses the path; if a scene ever draws wrong,
+`RECOMP_INLINE_FF=0` is the quick test.
+
 ## 4. Port features
 
 - **Settings menu** (the NFS ports' overlay): HP1's rows in `engine/src/overlay/hp1_options.c`. Bloom needed a lower "this is a 3D
