@@ -24,6 +24,9 @@ Engine fixes from the Harry Potter Chamber of Secrets port:
 - Lifter: 38 functions the disassembler missed are seeded. The lifter had given them empty bodies, so callers that
   jumped to a shared exit (`pop edi; pop esi; ret`) got their stack and registers back wrong. `tools/stubcheck.py`
   (run by the new `tools/relift.sh`) fails when a stub is real code.
+- Controller: the app no longer aborts when a controller disconnects. sdl2-compat keeps its pad list without a lock, and
+  the game's thread looked for pads again while the main thread did the same. Pads are now opened and closed on the main
+  thread only; the game's thread just reads them.
 
 ## 0.1.1 (2026-11-23)
 

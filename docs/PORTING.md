@@ -112,6 +112,14 @@ Each was a black screen, a hang or a crash.
     - Verified: relift + build; `tools/smoke.sh` OK (75 s); a 150 s scripted New Game (`build/script_floor.txt`) into
      Diagon Alley (hpm01) with clean exit and no wild calls, in a throwaway HOME.
 
+12. **Pad hotplug abort** (CoS `e64d110`, 2026-11-24): the app aborted in `SDL_NumJoysticks` (`pointer being freed was not
+    allocated`) when a controller disconnected: `xbox_InputGetState` -> `xbox_InputInit` rescanned on the game's thread while
+    sdl2-compat refreshed the same unlocked pad list on the main thread. `xbox_input_rescan()` now opens and closes pads on
+    the main thread (at start and on JOYDEVICEADDED/REMOVED, `apple_main.c`); the game's thread reads them under `g_pad_lock`
+    and no longer calls `SDL_GameControllerUpdate`; rumble takes the lock. Stress switch `NFSU2_PAD_HOTPLUG_TEST=<ms>`
+    attaches and detaches a virtual pad. Verified: `tools/smoke.sh` OK; `NFSU2_PAD_HOTPLUG_TEST=37 tools/smoke.sh 120`
+    OK (about 1,600 cycles, no abort).
+
 ## 4. Port features
 
 - **Settings menu** (the NFS ports' overlay): HP1's rows in `engine/src/overlay/hp1_options.c`. Bloom needed a lower "this is a 3D
@@ -161,3 +169,5 @@ binary (SDL, Capstone) and gave false failures; a DMG with a 400 KB slice of the
   those with double quotes, and `osacompile` checks them.
 - **Frame dumps at 4x are 11-20 MB each:** a long run of them filled the disk and later dumps came out black. Dump sparsely and
   delete them.
+- **SDL from two threads.** sdl2-compat's pad list (`SDL_NumJoysticks`) has no lock. Only the thread that pumps SDL's events
+  may open, close or enumerate pads; other threads read open ones.
