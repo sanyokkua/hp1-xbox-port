@@ -65,7 +65,7 @@ Each was a black screen, a hang or a crash.
    (`recomp_types.h`), with a unit test; in HP1 21 loads and 4 stores changed (`/* fld tbyte */`, `/* fstp tbyte */`).
    Relift, build and `tools/smoke.sh` pass.
 
-10. **Engine fixes from the Chamber of Secrets port (2026-11-23, not released):** From `hpcos-xbox-port` (its notes:
+10. **Engine fixes from the Chamber of Secrets port (2026-11-23, released in 0.1.2):** From `hpcos-xbox-port` (its notes:
    XBOX360_PORTING_NOTES.md section 14), commits a324956, e448ada, 84cc945, 582dc61, 0013c4f, 8e7050a:
    - **Texture border colour in the shader** (CoS `ca756e0`): border addressing (mode 4) samples clamp-to-edge and the
      fragment shader returns the stage's `SET_TEXTURE_BORDER_COLOR` outside [0, 1] (`nv2a_samp`, `Nv2aMslFs.bc/bm`). A
