@@ -3435,6 +3435,30 @@ static void mtl_draw_raw_inner(const Nv2aRawBatch *b)
                 fprintf(stderr, "[capture] done\n");
         }
         fidx++;
+        {   /* hppoa dev: RECOMP_MTL_ZCLAMP_LOG=1 lists the fixed-function triangle draws with a vertex between the eye
+             * and the near plane (0 < w, z < 0) or past the far plane (z > zmax w): the ones a per-vertex depth clamp
+             * bends and the clip-range cull (RECOMP_MTL_ZCULL) cuts */
+            static int zl = -1;
+            if (zl < 0) { const char *e = getenv("RECOMP_MTL_ZCLAMP_LOG"); zl = e && *e == '1'; }
+            if (zl && b->xform == 1 && cls == 2 && (b->attr_direct & 1u)) {
+                uint32_t v, nn = 0, nf = 0;
+                float zmax = (float)zmax_of(r), lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f };
+                for (v = 0; v < b->vertex_count; v++) {
+                    float p[4], z, w;
+                    attr_to_float4(b, 0, v, p);
+                    for (int c = 0; c < 3; c++) { if (p[c] < lo[c]) lo[c] = p[c]; if (p[c] > hi[c]) hi[c] = p[c]; }
+                    z = b->composite[8] * p[0] + b->composite[9] * p[1] + b->composite[10] * p[2] + b->composite[11] * p[3];
+                    w = b->composite[12] * p[0] + b->composite[13] * p[1] + b->composite[14] * p[2] + b->composite[15] * p[3];
+                    if (w > 0.0f && z < 0.0f) nn++;
+                    else if (w > 0.0f && z > zmax * w) nf++;
+                }
+                if (nn || nf)
+                    fprintf(stderr, "[zc] f%u #%u n %u verts %u tex %08X zwrite %u bias %u zminmax %08X clip %08X %08X: %u near, %u far\n"
+                                    "[zc]   box %.0f..%.0f %.0f..%.0f %.0f..%.0f\n",
+                            s_frame, fidx, n, b->vertex_count, b->tex_va[0], r[0x35C / 4], r[0x338 / 4], r[0x1D78 / 4],
+                            r[0x394 / 4], r[0x398 / 4], nn, nf, lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]);
+            }
+        }
         if ((dl >= 0 && (int)s_frame >= dl && (int)s_frame < dl + dl_n) || capturing()) {
             uint32_t k;
             fprintf(stderr, "[dl] f%u #%u prim %u n %u attrs %04X xform %u comb %08X %08X",
@@ -3478,6 +3502,11 @@ static void mtl_draw_raw_inner(const Nv2aRawBatch *b)
                 fprintf(stderr, " | a%u %.3g %.3g %.3g %.3g", k, v[0], v[1], v[2], v[3]);
             }
             fprintf(stderr, " | z %u %u %X", r[0x30C / 4], r[0x35C / 4], r[0x354 / 4]);
+            {   float cmin, cmax; memcpy(&cmin, &r[0x394 / 4], 4); memcpy(&cmax, &r[0x398 / 4], 4);
+                fprintf(stderr, " | zmm %X clip %g %g", r[0x1D78 / 4], cmin, cmax); }   /* ZMIN_MAX_CONTROL, clip range */
+            if (r[0x32C / 4])   /* stencil test: func ref mask, ops fail zfail pass */
+                fprintf(stderr, " | st %X %X %X op %X %X %X", r[0x364 / 4], r[0x368 / 4], r[0x36C / 4],
+                        r[0x370 / 4], r[0x374 / 4], r[0x378 / 4]);
             if (getenv("RECOMP_DL_ALLVERTS") && b->vertex_count > 6 && !(r[(0x1B00 + 0x0C) / 4] & 0x40000000u)) {
                 for (k = 0; k < b->vertex_count; k++) {
                     float q[4] = { 0, 0, 0, 0 };
