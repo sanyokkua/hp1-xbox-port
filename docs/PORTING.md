@@ -165,6 +165,22 @@ Route: the 160 s scripted New Game to Ollivanders (`build/script_floor.txt` plus
 - **Texgen maps**: no draw in the route uses 0x8511/0x8512/0x2402 (no `[mtl] texgen map mode` line), no shader failed, frames
   match with `RECOMP_MTL_TEXGEN_MAPS=0`. HP1 never logged a "not generated" warning, so this was never visible here.
 
+## 3e. NV2A renderer fixes from the PoA port (round 5, 2026-11-25)
+
+From the PoA port's xemu audit; one commit per fix, each with an off switch. Route: the 100 s scripted run (start, A presses,
+sticks), throwaway HOME, frame dumps every 300 frames, each switch off in turn plus two baseline runs (frames differ by
+cutscene timing, so pixel diffs are noise; the frames were compared by eye).
+- **Depth clamp per pixel** (`RECOMP_MTL_ZCLAMP_PIXEL=0`) and **clip-range cull** (`RECOMP_MTL_ZCULL=0`): used all the time here:
+  `ZMIN_MAX_CONTROL` is 1 (CULL), clip range 0..0xFFFFFF, and 3800 draws per route have vertices in front of the near plane
+  (26300 draw hits; the big floors and walls). No missing or bent geometry in any frame; Diagon Alley, Ollivanders and the cuts
+  look the same with each switch off. The W-buffer (CONTROL0 bit 16) is not emulated here, so the cull is skipped when it is set.
+- **Stencil op 0 = ZERO**: HP1 never enables the stencil test in the route (no `st` field in 466k draw-log lines): no effect.
+- **Alpha test rounding** (`RECOMP_ATEST_ROUND=0`): in `gl_psh.c`, shared by the MSL path; frames the same by eye.
+- **No normal flip in lighting** (`RECOMP_FF_FLIP_NORMALS=1`): 435k of 466k draws are lit; character and room lighting look the
+  same with and without the flip in the frames checked. Default off, as in PoA.
+- Draw log: `[dl]` shows `zmm`/`clip`/`st`; `RECOMP_MTL_ZCLAMP_LOG=1` lists draws with vertices before the near or past the far plane.
+- Not taken: PoA's `RECOMP_DL_ATTRS`, `RECOMP_MTL_SKIP_TEX`, `RECOMP_GL_DUMP_SURF` debug aids and the extra `[dlt]` texgen output.
+
 ## 4. Port features
 
 - **Settings menu** (the NFS ports' overlay): HP1's rows in `engine/src/overlay/hp1_options.c`. Bloom needed a lower "this is a 3D

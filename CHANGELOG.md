@@ -12,6 +12,12 @@ Engine and tool fixes from the Prisoner of Azkaban port:
   `RECOMP_INLINE_FF=0` restores the old rule. No effect seen in this game's routes so far.
 - Renderer (Metal): shaders compile as MSL 3.0 (`RECOMP_MTL_LANG=<major>.<minor>` picks another, `0` the OS default). A shader
   first seen in play stalled its frame 126-747 ms, now 42-184 ms; the `[hitch]` log line counts pipelines too.
+- Renderer (Metal): depth is clamped per pixel instead of per vertex (a triangle across the near plane no longer tilts;
+  `RECOMP_MTL_ZCLAMP_PIXEL=0` restores), and pixels outside the clip range are dropped as on the NV2A (`RECOMP_MTL_ZCULL=0`
+  off; not with the W-buffer). Stencil op 0 is ZERO, not KEEP (`RECOMP_MTL_STENCIL_ZERO=0`; this game never enables the stencil
+  test). The alpha test compares the rounded 8-bit alpha (`RECOMP_ATEST_ROUND=0`). Fixed-function lighting no longer flips
+  normals that face away from the eye (`RECOMP_FF_FLIP_NORMALS=1` restores). Draw log: clip range and stencil fields,
+  `RECOMP_MTL_ZCLAMP_LOG=1`.
 - `tools/immscan.py`: finds functions referenced only by an immediate (0 hits for this game).
 - Kernel: `ExQueryNonVolatileSetting` answers `XC_FACTORY_AV_REGION` (0x103) as NTSC-M (0x00400100); it was 0.
 - Disassembler: a call target that splits an instruction is also dropped when its callers are only functions decoded out of
