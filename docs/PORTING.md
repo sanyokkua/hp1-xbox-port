@@ -120,7 +120,7 @@ Each was a black screen, a hang or a crash.
     attaches and detaches a virtual pad. Verified: `tools/smoke.sh` OK; `NFSU2_PAD_HOTPLUG_TEST=37 tools/smoke.sh 120`
     OK (about 1,600 cycles, no abort).
 
-## 3a. Backports from the PoA port (2026-11-24)
+## 3a. Backports from the PoA port (2026-11-24, released in 0.1.3)
 
 - Disasm `_prune_data_call_targets`: relift with it, `functions.json` identical (6082 starts, same 17 stubs): no start dropped
   or added. Disasm tests: 62 passed.

@@ -1,28 +1,26 @@
 # Changelog
 
-## Unreleased
+## 0.1.3 (2026-11-25)
 
-Engine and tool fixes from the Prisoner of Azkaban port:
+Graphics, speed and install fixes found in the Prisoner of Azkaban port. Nothing in the game's own code or data changed.
 
-- Renderer (Metal): P8 textures are hashed byte for byte (the sampled hash missed changes); the polygon offset slope is scaled
-  by the render scale (`RECOMP_MTL_ZSLOPE=0` off; this build renders at 2x, so the slope was half the console's); texgen
-  reflection, normal and sphere maps are generated (`RECOMP_MTL_TEXGEN_MAPS=0` off).
-- Renderer (NV2A executor): in fixed-function mode inline and SET_VERTEX batches are transformed like array batches, the
-  SET_VERTEX_DATA4F(3) diffuse is used, and one-point and two-vertex batches are drawn instead of dropped.
-  `RECOMP_INLINE_FF=0` restores the old rule. No effect seen in this game's routes so far.
-- Renderer (Metal): shaders compile as MSL 3.0 (`RECOMP_MTL_LANG=<major>.<minor>` picks another, `0` the OS default). A shader
-  first seen in play stalled its frame 126-747 ms, now 42-184 ms; the `[hitch]` log line counts pipelines too.
-- Renderer (Metal): depth is clamped per pixel instead of per vertex (a triangle across the near plane no longer tilts;
-  `RECOMP_MTL_ZCLAMP_PIXEL=0` restores), and pixels outside the clip range are dropped as on the NV2A (`RECOMP_MTL_ZCULL=0`
-  off; not with the W-buffer). Stencil op 0 is ZERO, not KEEP (`RECOMP_MTL_STENCIL_ZERO=0`; this game never enables the stencil
-  test). The alpha test compares the rounded 8-bit alpha (`RECOMP_ATEST_ROUND=0`). Fixed-function lighting no longer flips
-  normals that face away from the eye (`RECOMP_FF_FLIP_NORMALS=1` restores). Draw log: clip range and stencil fields,
-  `RECOMP_MTL_ZCLAMP_LOG=1`.
-- `tools/immscan.py`: finds functions referenced only by an immediate (0 hits for this game).
-- Kernel: `ExQueryNonVolatileSetting` answers `XC_FACTORY_AV_REGION` (0x103) as NTSC-M (0x00400100); it was 0.
-- Disassembler: a call target that splits an instruction is also dropped when its callers are only functions decoded out of
-  data (no change to this game's 6082 functions).
-- `tools/stubcheck.py` covers the XDK code sections (D3D, XGRPH, DSOUND, XMV, D3DX, XPP), not only `.text`.
+- Faster: shaders compile with a newer Metal language, so a new effect seen for the first time in play stalls the frame for
+  42-184 ms instead of 126-747 ms (less stutter).
+- Graphics: decals and wall-paint layers sit at the right depth (the polygon offset now follows the 2x render scale); depth
+  is clamped per pixel, so a surface crossing the near plane no longer tilts or flickers, and pixels outside the depth range
+  are dropped as on the Xbox; the alpha test rounds as the Xbox does (fewer shimmering cut-out edges); reflection, normal and
+  sphere-map textures are generated; palette textures that change are noticed (the cache compared a sample, now every byte);
+  surfaces facing away from the eye are no longer lit from the wrong side.
+- Drawing: small batches of one or two vertices and inline-vertex batches are drawn instead of dropped (no effect seen in the
+  routes played so far). Stencil operation 0 now means "set to zero" (this game never uses the stencil test).
+- System: the Xbox region query answers NTSC-M, as on a US console.
+- Build tools: the translator keeps more real code when it meets data that looks like a call; the stand-in check covers the
+  XDK code sections; `tools/immscan.py` finds code reached only by an immediate value (none in this game).
+- Every change has an off switch for testing (`RECOMP_MTL_ZSLOPE=0`, `RECOMP_MTL_TEXGEN_MAPS=0`, `RECOMP_INLINE_FF=0`,
+  `RECOMP_MTL_LANG=0`, `RECOMP_MTL_ZCLAMP_PIXEL=0`, `RECOMP_MTL_ZCULL=0`, `RECOMP_MTL_STENCIL_ZERO=0`, `RECOMP_ATEST_ROUND=0`,
+  `RECOMP_FF_FLIP_NORMALS=1`).
+- Installed an earlier version? Open the new installer and choose **Rebuild**: it does not ask for the disc again, and your
+  saves and settings stay.
 
 ## 0.1.2 (2026-11-24)
 
