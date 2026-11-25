@@ -4,6 +4,9 @@
 
 Engine and tool fixes from the Prisoner of Azkaban port:
 
+- Renderer (Metal): P8 textures are hashed byte for byte (the sampled hash missed changes); the polygon offset slope is scaled
+  by the render scale (`RECOMP_MTL_ZSLOPE=0` off; this build renders at 2x, so the slope was half the console's); texgen
+  reflection, normal and sphere maps are generated (`RECOMP_MTL_TEXGEN_MAPS=0` off).
 - Renderer (NV2A executor): in fixed-function mode inline and SET_VERTEX batches are transformed like array batches, the
   SET_VERTEX_DATA4F(3) diffuse is used, and one-point and two-vertex batches are drawn instead of dropped.
   `RECOMP_INLINE_FF=0` restores the old rule. No effect seen in this game's routes so far.

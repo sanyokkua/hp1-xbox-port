@@ -151,6 +151,20 @@ room (free movement in Diagon Alley), so the open "barrel shadow strips" issue i
 change is kept because PoA validated it against xemu and nothing here uses the path; if a scene ever draws wrong,
 `RECOMP_INLINE_FF=0` is the quick test.
 
+## 3d. Metal fixes from the PoA port (round 4, 2026-11-25)
+
+Three fixes in `nv2a_metal.m` / `nv2a_metal_msl.c`, one commit each; the PoA-only skin second-layer matcher is not taken.
+Route: the 160 s scripted New Game to Ollivanders (`build/script_floor.txt` plus presses), throwaway HOME, frame dumps every
+200 frames, each switch on and off. Runs differ in cutscene timing, so frames are compared where the scene is static.
+- **P8 hash** (`bytes_hash_all`): no P8 texture changed in the route (`RECOMP_TEX_CHANGES=1`: 249 changes, all format 0x24),
+  so nothing to compare; HP1 has no P8 subtitle canvas that we know of. Harmless and cheap (one pass over w*h bytes per P8
+  texture lookup).
+- **Polygon offset slope** x target scale: used in the route (`[mtl] polygon offset in use (scale -0.250 -> -0.500; target scale
+  2.00)`). Frames with it and with `RECOMP_MTL_ZSLOPE=0` show no visible difference (the wand room differs only by moving
+  wands). The barrel room was not reached, so the "barrel shadow strips" issue is still not tested against it.
+- **Texgen maps**: no draw in the route uses 0x8511/0x8512/0x2402 (no `[mtl] texgen map mode` line), no shader failed, frames
+  match with `RECOMP_MTL_TEXGEN_MAPS=0`. HP1 never logged a "not generated" warning, so this was never visible here.
+
 ## 4. Port features
 
 - **Settings menu** (the NFS ports' overlay): HP1's rows in `engine/src/overlay/hp1_options.c`. Bloom needed a lower "this is a 3D
