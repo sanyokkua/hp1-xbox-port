@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.4 (2026-11-26)
+
+Two renderer fixes found in the Goblet of Fire port. Nothing in the game's own code or data changed.
+
+- Movies: every new movie frame is now shown. Before, about one frame change in 700 went unnoticed and the picture showed a
+  frame from four frames earlier for a moment (a tiny jump back, a few times a minute).
+- Full screen: the first frames after going full screen fill the whole screen instead of only its top-left part.
+- Installed an earlier version? Open the new installer and choose **Rebuild**: it does not ask for the disc again, and your
+  saves and settings stay.
+
 ## 0.1.3 (2026-11-25)
 
 Graphics, speed and install fixes found in the Prisoner of Azkaban port. Nothing in the game's own code or data changed.

@@ -181,6 +181,21 @@ cutscene timing, so pixel diffs are noise; the frames were compared by eye).
 - Draw log: `[dl]` shows `zmm`/`clip`/`st`; `RECOMP_MTL_ZCLAMP_LOG=1` lists draws with vertices before the near or past the far plane.
 - Not taken: PoA's `RECOMP_DL_ATTRS`, `RECOMP_MTL_SKIP_TEX`, `RECOMP_GL_DUMP_SURF` debug aids and the extra `[dlt]` texgen output.
 
+## 3f. Renderer fixes from the GoF port (2026-11-26, released in 0.1.4)
+
+- **Linear textures hashed in full** (GoF `8acec1d`): HP1's XMV movies are 640x480 YUY2 (format 0x24) linear textures in four
+  rotating buffers. A dev log per buffer compared the sampled hash with a full one: the sample missed 1 of 192 frame changes
+  in the logos and 2 of 1931 in the 60 s intro (`frontend.xmv`); each miss shows that buffer's frame from four frames
+  earlier. No freezes like GoF's (0.2 s screenshots: no repeated frames inside a movie). Cost: one pass over 600 KB a frame.
+- **`present()` lays the frame out in the drawable's own size** (GoF `c5131c0`): the same code here; only visible on a real
+  display going full screen.
+- Not taken: the `gof-backports` branch (lifter, disassembler, kernel timers, tools). HP1 imports neither `NtCreateTimer` nor
+  `NtSetTimerEx`; its generated code has no untranslated SSE instruction; the new `stubcheck.py` stops `relift.sh` at
+  `0x187664` and the audit (`PORTING_DOCS/archive/gof-backport-audit-2026-11-25/hp1_*`) shows its old seeds stand in for the
+  missing alias handling, so the lift would need re-seeding and a full replay for no symptom seen here.
+- Verified: `tools/smoke.sh` OK; a 165 s scripted New Game (`build/script_floor.txt` plus presses) through the logos and the
+  intro into Ollivanders, no `[ICALL] Failed`, clean exit.
+
 ## 4. Port features
 
 - **Settings menu** (the NFS ports' overlay): HP1's rows in `engine/src/overlay/hp1_options.c`. Bloom needed a lower "this is a 3D
